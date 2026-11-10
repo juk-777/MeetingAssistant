@@ -1,0 +1,23 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitignore" />
+    <File Path="AGENTS.md" />
+    <File Path="CLAUDE.md" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/MeetingAssistant.SharedKernel/MeetingAssistant.SharedKernel.csproj" />
+    <Project Path="src/MeetingAssistant.Domain/MeetingAssistant.Domain.csproj" />
+    <Project Path="src/MeetingAssistant.Application/MeetingAssistant.Application.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <File Path="tests/Directory.Build.props" />
+    <Project Path="tests/MeetingAssistant.ArchitectureTests/MeetingAssistant.ArchitectureTests.csproj" />
+    <Project Path="tests/MeetingAssistant.Domain.UnitTests/MeetingAssistant.Domain.UnitTests.csproj" />
+    <Project Path="tests/MeetingAssistant.Application.UnitTests/MeetingAssistant.Application.UnitTests.csproj" />
+  </Folder>
+</Solution>

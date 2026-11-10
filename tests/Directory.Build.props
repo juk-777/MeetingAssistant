@@ -1,0 +1,20 @@
+<Project>
+
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <!--
+      Тестовое приложение запускается на Microsoft.Testing.Platform (global.json). Команда dotnet test
+      с xunit.v3 на SDK 10 находит ноль тестов, поэтому набор гоняется scripts/test.sh, а один проект —
+      через dotnet run с ключом project.
+    -->
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

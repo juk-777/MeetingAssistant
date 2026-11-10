@@ -1,0 +1,39 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisMode>Recommended</AnalysisMode>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!--
+    Сборка из WSL уводит obj и bin из каталогов проекта: дерево лежит на диске Windows,
+    и MSBuild из WSL с Rider из Windows иначе перезаписывают артефакты друг друга. Признак WSL —
+    переменная WSL_DISTRO_NAME; на Windows условие не срабатывает, и каталоги проекта остаются на месте.
+    Каталог — под домашним, а не под /tmp: /tmp здесь tmpfs, то есть оперативная память.
+    Ключ дерева несёт хеш пути, чтобы основной каталог и worktree не подсовывали друг другу сборки;
+    ключ проекта — путь от корня, а не имя.
+  -->
+  <PropertyGroup Condition="'$(WSL_DISTRO_NAME)' != '' And '$(DOTNET_RUNNING_IN_CONTAINER)' == ''">
+    <MaBuildRoot Condition="'$(MaBuildRoot)' == ''">$(HOME)/.cache/meeting-assistant-build</MaBuildRoot>
+    <MaTreeHash>$([MSBuild]::StableStringHash($(MSBuildThisFileDirectory), 'Sha256'))</MaTreeHash>
+    <MaTreeKey>$([System.IO.Path]::GetFileName($(MSBuildThisFileDirectory.TrimEnd('/'))))-$(MaTreeHash.Substring(0, 12))</MaTreeKey>
+    <MaProjectKey>$([MSBuild]::MakeRelative($(MSBuildThisFileDirectory), $(MSBuildProjectDirectory)))</MaProjectKey>
+    <BaseIntermediateOutputPath>$(MaBuildRoot)/$(MaTreeKey)/obj/$(MaProjectKey)/</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MaBuildRoot)/$(MaTreeKey)/bin/$(MaProjectKey)/</BaseOutputPath>
+
+    <!--
+      Пути ушли из каталога проекта, и SDK перестал исключать их из своих глобов: оставшиеся
+      obj и bin от Rider иначе попадают в компиляцию вторым разом.
+    -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin/**;obj/**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

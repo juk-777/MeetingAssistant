@@ -1,0 +1,35 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+
+[*.{json,yml,yaml,xml,csproj,props,targets,slnx}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cs]
+csharp_style_namespace_declarations = file_scoped:error
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_prefer_braces = true:warning
+dotnet_style_require_accessibility_modifiers = for_non_interface_members:warning
+dotnet_sort_system_directives_first = true
+
+# Проверку аргументов на null делает граница (точка входа), а не каждый внутренний метод.
+dotnet_diagnostic.CA1062.severity = none
+dotnet_diagnostic.CA1305.severity = warning
+# Конфликт имён с ключевыми словами других языков .NET важен библиотеке; приложение пишется только на C#,
+# а Error — устоявшееся имя ожидаемого отказа в паре с Result.
+dotnet_diagnostic.CA1716.severity = none
+
+# Имена тестов — три части через подчёркивание, поэтому CA1707 здесь неуместен.
+[tests/**/*.cs]
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.CA1034.severity = none
