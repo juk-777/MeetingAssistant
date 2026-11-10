@@ -1,13 +1,45 @@
 <Solution>
   <Folder Name="/Solution Items/">
+    <File Path="README.md" />
+    <File Path="CLAUDE.md" />
+    <File Path="AGENTS.md" />
+    <File Path="LICENSE" />
+    <File Path="global.json" />
     <File Path=".editorconfig" />
     <File Path=".gitignore" />
-    <File Path="AGENTS.md" />
-    <File Path="CLAUDE.md" />
     <File Path="Directory.Build.props" />
     <File Path="Directory.Packages.props" />
-    <File Path="global.json" />
-    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/Solution Items/docs/">
+    <File Path="docs/architecture.md" />
+    <File Path="docs/decisions.md" />
+    <File Path="docs/development.md" />
+    <File Path="docs/measurements.md" />
+  </Folder>
+  <Folder Name="/Solution Items/docs/plans/">
+    <File Path="docs/plans/2026-11-10-meeting-domain-and-scenarios.md" />
+    <File Path="docs/plans/_template.md" />
+  </Folder>
+  <Folder Name="/Solution Items/docs/specs/">
+    <File Path="docs/specs/2026-11-10-meeting-domain-and-scenarios.md" />
+    <File Path="docs/specs/_template.md" />
+  </Folder>
+  <Folder Name="/Solution Items/prototype/">
+    <File Path="prototype/Directory.Build.props" />
+    <File Path="prototype/Directory.Packages.props" />
+    <File Path="prototype/README.md" />
+    <File Path="prototype/bench.py" />
+    <File Path="prototype/delta.sh" />
+    <File Path="prototype/hint.sh" />
+    <File Path="prototype/recorder_sim.py" />
+    <Project Path="prototype/wnet/wnet.csproj">
+      <Build Project="false" />
+    </Project>
+  </Folder>
+  <Folder Name="/Solution Items/scripts/">
+    <File Path="scripts/mutate.sh" />
+    <File Path="scripts/slnx-folders.sh" />
+    <File Path="scripts/test.sh" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/MeetingAssistant.SharedKernel/MeetingAssistant.SharedKernel.csproj" />

@@ -45,19 +45,34 @@ tracked = subprocess.run(
 ).stdout.split()
 
 
+# Проект внутри этих каталогов (стенд прототипа) входит в решение проектом, а не россыпью файлов: иначе IDE
+# открывает его код вне проекта и не видит пакетов. Решение его не собирает — у стенда свои версии и платформа.
+PROJECT_EXTENSION = ".csproj"
+
+
 def render():
     lines = [f'  <Folder Name="/{ROOT}/">']
     lines.extend(f'    <File Path="{path}" />' for path in ROOT_FILES if path in tracked)
     lines.append("  </Folder>")
 
+    in_trees = [path for path in tracked if path.split("/", 1)[0] in TREES]
+    project_dirs = {posixpath.dirname(path) for path in in_trees if path.endswith(PROJECT_EXTENSION)}
+
+    def owned_by_project(path):
+        return any(path.startswith(directory + "/") for directory in project_dirs)
+
     folders = {}
-    for path in tracked:
-        if path.split("/", 1)[0] in TREES:
-            folders.setdefault(posixpath.dirname(path), []).append(path)
+    for path in in_trees:
+        if path.endswith(PROJECT_EXTENSION):
+            # Проект сам показывает свой каталог, поэтому ложится в папку родителя, а не в одноимённую свою.
+            folders.setdefault(posixpath.dirname(posixpath.dirname(path)), []).append(
+                f'    <Project Path="{path}">\n      <Build Project="false" />\n    </Project>')
+        elif not owned_by_project(path):
+            folders.setdefault(posixpath.dirname(path), []).append(f'    <File Path="{path}" />')
 
     for folder in sorted(folders):
         lines.append(f'  <Folder Name="/{ROOT}/{folder}/">')
-        lines.extend(f'    <File Path="{path}" />' for path in sorted(folders[folder]))
+        lines.extend(sorted(folders[folder]))
         lines.append("  </Folder>")
 
     return "\n".join(lines)

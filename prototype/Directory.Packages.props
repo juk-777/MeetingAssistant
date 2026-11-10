@@ -1,0 +1,8 @@
+<Project>
+  <!--
+    Стенды держат версии пакетов в своих проектах: централизованные версии решения сюда не наследуются.
+  -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>
