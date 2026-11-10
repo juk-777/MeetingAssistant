@@ -1,0 +1,13 @@
+using System.CommandLine;
+using MeetingAssistant.Cli.Replay;
+
+RootCommand rootCommand = new("Запись встречи: транскрипт и события для сессии Claude Code")
+{
+    ReplayCommand.Create(),
+};
+
+// Ctrl+C отменяет подачу звука, а уже вырезанные фразы распознаются и встреча получает конец записи.
+// Вживую в очереди одна-две фразы; срок с запасом — на ускоренный replay с длинной очередью.
+var invocation = new InvocationConfiguration { ProcessTerminationTimeout = TimeSpan.FromSeconds(30) };
+
+return await rootCommand.Parse(args).InvokeAsync(invocation);

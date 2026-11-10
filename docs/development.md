@@ -26,7 +26,8 @@
 
 - **Набор:** xunit.v3 на Microsoft.Testing.Platform, Shouldly, NSubstitute для портов. Прогон — `scripts/test.sh`:
   `dotnet test` на SDK 10 с xunit.v3 находит ноль тестов, поэтому тестовые приложения запускаются напрямую.
-  Один проект — `dotnet run --project tests/<проект>`.
+  Один проект — `dotnet run --project tests/<проект>`. Ключи сборки (`-m:1`, `-v`) этой командой уходят тестовому
+  приложению, а не MSBuild: собрать отдельно `dotnet build`, затем `dotnet run --no-build --project …`.
 - **Имена:** `MethodUnderTest_WhenScenario_ExpectedResult`.
 - **Unit** — домен и сценарии на двойниках портов. **Интеграционные** — настоящие модели sherpa-onnx и файлы во
   временном каталоге; нет моделей — тест падает с командой скачивания. **Архитектурные** — правило зависимостей
@@ -82,6 +83,8 @@
 - Переводы строк — LF. Исходник пишется `Write`/`Edit`, а не heredoc'ом в оболочке.
 - Новый скрипт — с битом исполнения в git: на `/mnt/*` из WSL `core.filemode=false`, и бит сам не попадает
   в индекс — `git update-index --chmod=+x <файл>`.
+- Правило `.gitignore` для каталога вывода — от корня (`/meetings/`): на `/mnt/*` у git `core.ignorecase=true`,
+  и `meetings/` без `/` скрывает и каталоги кода `Meetings/` — новый файл в них молча не попадает в git.
 
 ## Документы
 

@@ -22,6 +22,7 @@ public sealed class DependencyRuleTests
     private static readonly Assembly SharedKernelAssembly = typeof(Entity<>).Assembly;
     private static readonly Assembly DomainAssembly = typeof(Channel).Assembly;
     private static readonly Assembly ApplicationAssembly = typeof(ICommand).Assembly;
+    private static readonly Assembly InfrastructureAssembly = typeof(Infrastructure.DependencyInjection).Assembly;
 
     [Fact]
     public void SharedKernel_WhenInspected_DependsOnNoOtherLayer()
@@ -39,6 +40,12 @@ public sealed class DependencyRuleTests
     public void Application_WhenInspected_DoesNotKnowInfrastructureOrEntryPoint()
     {
         AssertNoDependency(ApplicationAssembly, [InfrastructureNamespace, CliNamespace, .. ExternalAudioAndSpeech]);
+    }
+
+    [Fact]
+    public void Infrastructure_WhenInspected_DoesNotKnowEntryPoint()
+    {
+        AssertNoDependency(InfrastructureAssembly, CliNamespace);
     }
 
     private static void AssertNoDependency(Assembly assembly, params string[] forbidden)

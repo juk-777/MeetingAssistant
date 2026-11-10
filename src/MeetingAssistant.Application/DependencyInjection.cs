@@ -1,6 +1,7 @@
 using MeetingAssistant.Application.Abstractions.Behaviors;
 using MeetingAssistant.Application.Abstractions.Events;
 using MeetingAssistant.Application.Abstractions.Messaging;
+using MeetingAssistant.Application.Meetings.Recording;
 using MeetingAssistant.SharedKernel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -34,6 +35,7 @@ public static class DependencyInjection
         services.TryDecorate(typeof(ICommandHandler<,>), typeof(LoggingDecorator.CommandHandler<,>));
 
         services.AddTransient<IDomainEventDispatcher, DomainEventDispatcher>();
+        services.AddTransient<IMeetingRecorder, MeetingRecorder>();
         services.TryAddSingleton(TimeProvider.System);
 
         return services;

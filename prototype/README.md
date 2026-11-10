@@ -14,7 +14,9 @@ uv venv -q -p 3.12 .venv && uv pip install -q -p .venv sherpa-onnx==2.0.1 numpy
 - `bench.py <имя>` — `samples/<имя>.wav`: нарезка Silero VAD (фразы в `seg/<имя>/` + `segments.json`), GigaAM v3 CTC
   по фразам, T-one потоком (если его модель есть в `models/`). Расшифровки — `out/`. Потоки — `THREADS` (2).
 - `recorder_sim.py <имя>` — имитация приложения записи: подаёт запись в реальном темпе (`SPEED` для ускорения),
-  пишет `live/transcript.md` и `live/events.log` в формате прототипа.
+  пишет `live/transcript.md` и `live/events.log` в формате прототипа. В продукте его заменяет `meeting replay`
+  (`docs/architecture.md`, «Управление»): формат строк с каналом, правила событий из домена. Скрипт остаётся опорой
+  прошлых замеров.
 - `delta.sh` — новые строки транскрипта с прошлого вызова (смещение в `live/.offset`).
 - `hint.sh <epoch события> <текст|SKIP>` — фиксирует подсказку и задержку от события в `live/hints.md`.
 - `wnet/` — Whisper.net 1.9.1 по фразам из `seg/`: `dotnet run -c Release -- <seg/имя> <ggml-модель> <выход> <потоки> [prompt]`.

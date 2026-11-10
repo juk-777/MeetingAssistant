@@ -7,7 +7,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/MeetingAssistant.Application/MeetingAssistant.Application.csproj" />
+    <ProjectReference Include="../../src/MeetingAssistant.Infrastructure/MeetingAssistant.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

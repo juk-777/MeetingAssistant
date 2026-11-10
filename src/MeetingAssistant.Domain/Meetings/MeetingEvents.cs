@@ -5,6 +5,8 @@ namespace MeetingAssistant.Domain.Meetings;
 /// <summary>
 /// Реплика записана во встречу.
 /// </summary>
+// Ложное срабатывание инспекции: свойство читает подписчик WriteUtteranceToTranscript в Application.
+// ReSharper disable once NotAccessedPositionalProperty.Global
 public sealed record UtteranceRecorded(Utterance Utterance) : IDomainEvent;
 
 /// <summary>

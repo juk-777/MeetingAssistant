@@ -18,10 +18,12 @@
   </Folder>
   <Folder Name="/Solution Items/docs/plans/">
     <File Path="docs/plans/2026-11-10-meeting-domain-and-scenarios.md" />
+    <File Path="docs/plans/2026-11-10-meeting-files-and-replay.md" />
     <File Path="docs/plans/_template.md" />
   </Folder>
   <Folder Name="/Solution Items/docs/specs/">
     <File Path="docs/specs/2026-11-10-meeting-domain-and-scenarios.md" />
+    <File Path="docs/specs/2026-11-10-meeting-files-and-replay.md" />
     <File Path="docs/specs/_template.md" />
   </Folder>
   <Folder Name="/Solution Items/prototype/">
@@ -45,11 +47,14 @@
     <Project Path="src/MeetingAssistant.SharedKernel/MeetingAssistant.SharedKernel.csproj" />
     <Project Path="src/MeetingAssistant.Domain/MeetingAssistant.Domain.csproj" />
     <Project Path="src/MeetingAssistant.Application/MeetingAssistant.Application.csproj" />
+    <Project Path="src/MeetingAssistant.Infrastructure/MeetingAssistant.Infrastructure.csproj" />
+    <Project Path="src/MeetingAssistant.Cli/MeetingAssistant.Cli.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <File Path="tests/Directory.Build.props" />
     <Project Path="tests/MeetingAssistant.ArchitectureTests/MeetingAssistant.ArchitectureTests.csproj" />
     <Project Path="tests/MeetingAssistant.Domain.UnitTests/MeetingAssistant.Domain.UnitTests.csproj" />
     <Project Path="tests/MeetingAssistant.Application.UnitTests/MeetingAssistant.Application.UnitTests.csproj" />
+    <Project Path="tests/MeetingAssistant.Infrastructure.IntegrationTests/MeetingAssistant.Infrastructure.IntegrationTests.csproj" />
   </Folder>
 </Solution>

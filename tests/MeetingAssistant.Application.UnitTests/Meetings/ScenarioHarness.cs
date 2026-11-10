@@ -1,5 +1,6 @@
 using MeetingAssistant.Application.Abstractions.Messaging;
 using MeetingAssistant.Application.Meetings;
+using MeetingAssistant.Application.Meetings.Recording;
 using MeetingAssistant.Domain.Meetings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -28,6 +29,7 @@ internal sealed class ScenarioHarness : IDisposable
         services.AddSingleton(Recognizer);
         services.AddSingleton(Transcript);
         services.AddSingleton(WakeEvents);
+        services.AddSingleton<IVoiceActivityDetectorFactory>(Detectors);
         services.AddApplication();
         _provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true });
     }
@@ -45,6 +47,10 @@ internal sealed class ScenarioHarness : IDisposable
     public ITranscriptWriter Transcript { get; } = Substitute.For<ITranscriptWriter>();
 
     public IWakeEventWriter WakeEvents { get; } = Substitute.For<IWakeEventWriter>();
+
+    public HoldingDetectors Detectors { get; } = new();
+
+    public IMeetingRecorder Recorder() => _provider.GetRequiredService<IMeetingRecorder>();
 
     public ICommandHandler<TCommand> Handler<TCommand>()
         where TCommand : ICommand =>
