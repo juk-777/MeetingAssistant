@@ -6,7 +6,7 @@ namespace MeetingAssistant.Domain.Meetings;
 public enum Channel
 {
     /// <summary>
-    /// Микрофон — владелец записи.
+    /// Микрофон — тот, кто ведёт запись.
     /// </summary>
     Me = 1,
 
