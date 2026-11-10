@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Каталог встречи для скилла /meeting: из аргумента или из current.json в корне встреч ($MEETINGS_ROOT).
+#
+# Путь печатается так, как его видит эта оболочка: путь Windows (D:\…), который пишет процесс записи под Windows,
+# в WSL переводится через wslpath. Отказ — код 1 и текст на stderr: что задать или запустить.
+#
+# meeting-dir [каталог встречи]
+set -euo pipefail
+
+fail() {
+    printf '%s\n' "$1" >&2
+    exit 1
+}
+
+to_local() {
+    if [[ $1 =~ ^[A-Za-z]:[\\/] ]] && command -v wslpath >/dev/null; then
+        wslpath -u "$1"
+    else
+        printf '%s\n' "$1"
+    fi
+}
+
+if [ $# -gt 0 ]; then
+    dir=$(to_local "$1")
+else
+    [ -n "${MEETINGS_ROOT:-}" ] ||
+        fail "Не задан MEETINGS_ROOT — корень встреч, тот же, что Storage:MeetingsRoot приложения. Задать в env ~/.claude/settings.json или передать каталог встречи: /meeting <каталог>."
+    current="$(to_local "$MEETINGS_ROOT")/current.json"
+    [ -f "$current" ] ||
+        fail "Нет $current: встреча ещё не начиналась. Запустить запись (meeting start или meeting replay) и повторить."
+    command -v jq >/dev/null || fail "Нужен jq: он читает $current."
+    directory=$(jq -er '.directory' "$current") || fail "В $current нет поля directory."
+    dir=$(to_local "$directory")
+fi
+
+[ -d "$dir" ] || fail "Нет каталога встречи: $dir"
+cd "$dir" && pwd

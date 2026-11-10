@@ -53,6 +53,21 @@ for app in $apps; do
     fi
 done
 
+# Скрипты скилла /meeting — bash-тесты; фильтр в аргументах относится к тестам .NET, скилл под ним не гоняется.
+if [ $# -eq 0 ]; then
+    output=$(skills/meeting/tests/run.sh 2>&1)
+    code=$?
+    count=$(printf '%s' "$output" | grep -oP 'итого: \K\d+' | tail -1)
+    total=$((total + ${count:-0}))
+
+    if [ $code -ne 0 ] || [ -z "$count" ]; then
+        failed=1
+        printf '%s\n' "$output"
+    else
+        echo "ok  скилл /meeting — $count"
+    fi
+fi
+
 echo "итого тестов: $total"
 
 if [ $apps_run -eq 0 ] || [ $total -eq 0 ]; then

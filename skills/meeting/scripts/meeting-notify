@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Всплывающее уведомление Windows с подсказкой: на созвоне в фокусе приложение звонка, а не терминал.
+# Строки текста склеиваются пробелом — переносит Windows; показ длинный (≈ 25 с), пропущенное остаётся в центре
+# уведомлений.
+#
+# Показывает его powershell.exe, поэтому терминал, в котором открыта сессия, роли не играет. powershell.exe виден
+# из WSL и из Windows; где его нет (Linux, macOS), скрипт ничего не делает.
+#
+# meeting-notify <текст>
+set -euo pipefail
+
+if [ $# -ne 1 ]; then
+    echo "meeting-notify <текст>" >&2
+    exit 2
+fi
+
+command -v powershell.exe > /dev/null || exit 0
+
+# Текст — переменной окружения, а не в командной строке: кавычки подсказки не ломают команду PowerShell, кириллица
+# не проходит через кодовую страницу консоли. Из WSL в Windows-процесс переменная попадает, только если названа
+# в WSLENV.
+text=${1//$'\r'/}
+export MEETING_NOTIFY_TEXT=${text//$'\n'/ }
+export WSLENV="${WSLENV:+$WSLENV:}MEETING_NOTIFY_TEXT"
+
+# Уведомление показывается от имени приложения из меню «Пуск»; Windows PowerShell есть в любой Windows.
+powershell.exe -NoProfile -NonInteractive -Command '
+$ErrorActionPreference = "Stop"
+$manager = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+$toast = $manager::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+$toast.DocumentElement.SetAttribute("duration", "long")
+$texts = $toast.GetElementsByTagName("text")
+$texts.Item(0).AppendChild($toast.CreateTextNode("MeetingAssistant")) | Out-Null
+$texts.Item(1).AppendChild($toast.CreateTextNode($env:MEETING_NOTIFY_TEXT)) | Out-Null
+$app = "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe"
+$manager::CreateToastNotifier($app).Show([Windows.UI.Notifications.ToastNotification]::new($toast))
+'

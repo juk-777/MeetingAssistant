@@ -19,11 +19,13 @@
   <Folder Name="/Solution Items/docs/plans/">
     <File Path="docs/plans/2026-11-10-meeting-domain-and-scenarios.md" />
     <File Path="docs/plans/2026-11-10-meeting-files-and-replay.md" />
+    <File Path="docs/plans/2026-11-10-meeting-skill.md" />
     <File Path="docs/plans/_template.md" />
   </Folder>
   <Folder Name="/Solution Items/docs/specs/">
     <File Path="docs/specs/2026-11-10-meeting-domain-and-scenarios.md" />
     <File Path="docs/specs/2026-11-10-meeting-files-and-replay.md" />
+    <File Path="docs/specs/2026-11-10-meeting-skill.md" />
     <File Path="docs/specs/_template.md" />
   </Folder>
   <Folder Name="/Solution Items/prototype/">
@@ -39,9 +41,22 @@
     </Project>
   </Folder>
   <Folder Name="/Solution Items/scripts/">
+    <File Path="scripts/install-skill.sh" />
     <File Path="scripts/mutate.sh" />
     <File Path="scripts/slnx-folders.sh" />
     <File Path="scripts/test.sh" />
+  </Folder>
+  <Folder Name="/Solution Items/skills/meeting/">
+    <File Path="skills/meeting/SKILL.md" />
+  </Folder>
+  <Folder Name="/Solution Items/skills/meeting/scripts/">
+    <File Path="skills/meeting/scripts/meeting-dir" />
+    <File Path="skills/meeting/scripts/meeting-hint" />
+    <File Path="skills/meeting/scripts/meeting-notify" />
+    <File Path="skills/meeting/scripts/meeting-watch" />
+  </Folder>
+  <Folder Name="/Solution Items/skills/meeting/tests/">
+    <File Path="skills/meeting/tests/run.sh" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/MeetingAssistant.SharedKernel/MeetingAssistant.SharedKernel.csproj" />

@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# Команда для Monitor: события встречи вместе со строками транскрипта, которые сессия ещё не видела.
+#
+# Каждая строка вывода становится уведомлением сессии; блок события печатается разом и приходит одним
+# уведомлением, поэтому сессия получает текст без отдельного чтения. Блоки:
+#   начало<TAB><строк>                          — первое подключение: весь транскрипт до этого момента;
+#   событие<TAB><epoch><TAB><поводы><TAB><номер> — событие и новые строки;
+#   конец записи<TAB><epoch><TAB><номер>        — оставшиеся строки, после чего скрипт выходит с кодом 0.
+# Перезапуск после конца печатает только заголовок конца и выходит.
+#
+# Состояние чтения (сколько событий отдано, до какой строки прочитан транскрипт) хранится вне каталога встречи,
+# на пару «встреча, проект»: перезапуск продолжает с того же места, две сессии разных проектов читают независимо.
+# Оно сохраняется после вывода блока: убитый между выводом и сохранением блок повторится, но не потеряется.
+#
+# Файлы опрашиваются, а не ждутся через inotify: процесс записи под Windows пишет на диск, который WSL видит
+# через drvfs, и опрос не зависит от того, доходят ли оттуда уведомления о записи.
+#
+# meeting-watch <каталог встречи>
+set -euo pipefail
+
+END_OF_RECORDING="конец записи"
+POLL_SECONDS=0.5
+LINE_WAIT_POLLS=10
+
+dir=$(cd "$1" && pwd)
+transcript="$dir/transcript.md"
+events="$dir/events.log"
+
+project=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/meeting-assistant"
+state="$state_dir/$(printf '%s\n%s\n' "$dir" "$project" | sha1sum | cut -c1-16)"
+mkdir -p "$state_dir"
+
+# Последнюю строку процесс записи может ещё дописывать: в счёт идут только строки с переводом строки.
+complete_lines() {
+    if [ -f "$1" ]; then wc -l < "$1"; else echo 0; fi
+}
+
+save_state() {
+    printf '%s %s\n' "$events_seen" "$lines_read" > "$state.tmp"
+    mv "$state.tmp" "$state"
+}
+
+# Номер последней полной строки транскрипта, 0 — строк нет.
+last_number() {
+    local count
+    count=$(complete_lines "$transcript")
+    if [ "$count" -gt 0 ]; then head -n "$count" "$transcript" | tail -n 1 | cut -f1; else echo 0; fi
+}
+
+# Процесс записи пишет событие после строки, на которую оно указывает, но что WSL через drvfs видит два файла
+# в том же порядке, не проверялось: строку события ждём не дольше LINE_WAIT_POLLS тактов, потом отдаём что есть.
+wait_for_line() {
+    local polls=$LINE_WAIT_POLLS
+    while [ "$polls" -gt 0 ] && [ "$(last_number)" -lt "$1" ]; do
+        sleep "$POLL_SECONDS"
+        polls=$((polls - 1))
+    done
+}
+
+# Строки транскрипта с номером больше прочитанного — в $block, их число — в $block_size.
+collect_block() {
+    local count
+    block=""
+    block_size=0
+    count=$(complete_lines "$transcript")
+    [ "$count" -gt 0 ] || return 0
+    block=$(head -n "$count" "$transcript" | awk -F'\t' -v after="$lines_read" '$1 > after')
+    [ -z "$block" ] || block_size=$(printf '%s\n' "$block" | wc -l)
+}
+
+# Печатает заголовок и собранные строки без номера и времени распознавания, сдвигает прочитанное.
+emit_block() {
+    printf '%s\n' "$1"
+    [ -n "$block" ] || return 0
+    printf '%s\n' "$block" | cut -f3-
+    lines_read=$(printf '%s\n' "$block" | tail -n 1 | cut -f1)
+}
+
+# Строка конца записи среди отданных событий; пусто — конца ещё не было.
+seen_end() {
+    [ "$events_seen" -gt 0 ] || return 0
+    head -n "$events_seen" "$events" | awk -F'\t' -v end="$END_OF_RECORDING" '$3 == end'
+}
+
+end_header() {
+    printf '%s\t%s\t%s' "$END_OF_RECORDING" "$1" "$2"
+}
+
+if [ -f "$state" ]; then
+    read -r events_seen lines_read < "$state"
+else
+    events_seen=$(complete_lines "$events")
+    lines_read=0
+    collect_block
+    emit_block "$(printf 'начало\t%s' "$block_size")"
+    save_state
+fi
+
+# Конец отдан вместе со всеми строками и сохранён одной записью состояния: отдавать больше нечего.
+end_line=$(seen_end)
+if [ -n "$end_line" ]; then
+    IFS=$'\t' read -r at number _ <<< "$end_line"
+    end_header "$at" "$number"
+    echo
+    exit 0
+fi
+
+while true; do
+    count=$(complete_lines "$events")
+    while [ "$events_seen" -lt "$count" ]; do
+        events_seen=$((events_seen + 1))
+        IFS=$'\t' read -r at number reasons < <(sed -n "${events_seen}p" "$events")
+
+        wait_for_line "$number"
+        collect_block
+        if [ "$reasons" = "$END_OF_RECORDING" ]; then
+            emit_block "$(end_header "$at" "$number")"
+            save_state
+            exit 0
+        fi
+
+        emit_block "$(printf 'событие\t%s\t%s\t%s' "$at" "$reasons" "$number")"
+        save_state
+    done
+
+    sleep "$POLL_SECONDS"
+done
