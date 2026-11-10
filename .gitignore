@@ -1,0 +1,29 @@
+# Модели: качаются по docs/measurements.md, «Модели»
+models/
+
+# Записи и расшифровки встреч — голос и слова живых людей, в git не идут
+samples/
+*.wav
+*.mp3
+*.ogg
+*.wmv
+
+# Прогоны прототипа
+prototype/out/
+prototype/seg/
+prototype/live/
+prototype/.venv/
+
+# .NET
+bin/
+obj/
+*.user
+.vs/
+.idea/
+TestResults/
+
+# Отчёты инспекций и прогонов для человека
+artifacts/
+
+# Личные настройки агента
+.claude/settings.local.json
