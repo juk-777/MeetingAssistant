@@ -1,8 +1,10 @@
 using System.CommandLine;
 using MeetingAssistant.Cli.Replay;
+using MeetingAssistant.Cli.Start;
 
 RootCommand rootCommand = new("Запись встречи: транскрипт и события для сессии Claude Code")
 {
+    StartCommand.Create(),
     ReplayCommand.Create(),
 };
 

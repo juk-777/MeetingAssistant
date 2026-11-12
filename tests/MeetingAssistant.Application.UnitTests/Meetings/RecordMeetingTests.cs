@@ -136,6 +136,43 @@ public sealed class RecordMeetingTests : IDisposable
     }
 
     [Fact]
+    public async Task Record_WhenSourceLosesDevice_RecognizesPhrasesWritesEndAndFailsWithCode()
+    {
+        Meeting meeting = _harness.RunningMeeting();
+        _harness.RecognizerReturns(Text);
+        var source = new ScriptedSource(
+            [ScriptedSource.Seconds(Channel.Me, 1), ScriptedSource.Seconds(Channel.Others, 2)],
+            failure: new AudioSourceException("Устройство отключено"));
+
+        Result result = await _harness.Recorder().Record(source, Token).WaitAsync(Limit, Token);
+
+        result.Error.Code.ShouldBe(MeetingScenarioErrors.AudioSourceFailedCode);
+        RecordedSpans().ShouldBe(
+            [(Channel.Me, Seconds(0), Seconds(1)), (Channel.Others, Seconds(0), Seconds(2))],
+            ignoreOrder: true);
+        meeting.IsRunning.ShouldBeFalse();
+        await _harness.WakeEvents.Received(1).AppendEnd(
+            new MeetingStopped(2, _harness.Time.GetUtcNow()),
+            Arg.Is<CancellationToken>(token => !token.IsCancellationRequested));
+    }
+
+    [Fact]
+    public async Task Record_WhenSourceFailsWithOtherException_RethrowsWithoutEnd()
+    {
+        Meeting meeting = _harness.RunningMeeting();
+        _harness.RecognizerReturns(Text);
+        var source = new ScriptedSource(
+            [ScriptedSource.Seconds(Channel.Me, 1)],
+            failure: new InvalidOperationException("Дефект источника"));
+        IMeetingRecorder recorder = _harness.Recorder();
+
+        await Should.ThrowAsync<InvalidOperationException>(() => recorder.Record(source, Token).WaitAsync(Limit, Token));
+
+        meeting.IsRunning.ShouldBeTrue();
+        await _harness.WakeEvents.DidNotReceive().AppendEnd(Arg.Any<MeetingStopped>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task Record_WhenDetectorFlushFails_RethrowsAfterRecognizingCutPhrasesInsteadOfHanging()
     {
         _harness.RunningMeeting();

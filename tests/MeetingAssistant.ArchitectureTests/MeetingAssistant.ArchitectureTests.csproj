@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/MeetingAssistant.Infrastructure/MeetingAssistant.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/MeetingAssistant.Cli/MeetingAssistant.Cli.csproj" />
   </ItemGroup>
 
 </Project>

@@ -115,25 +115,3 @@ public sealed class WavFileAudioSource : IAudioSource
         }
     }
 }
-
-/// <summary>
-/// Отказы источника звука с диска.
-/// </summary>
-public static class AudioErrors
-{
-    public const string FileNotFoundCode = "Audio.FileNotFound";
-    public const string UnsupportedFormatCode = "Audio.UnsupportedFormat";
-
-    public static Error FileNotFound(string path) => new(FileNotFoundCode, $"Нет файла записи: {path}.");
-
-    public static Error UnsupportedFormat(string path, WaveFormat format) =>
-        new(UnsupportedFormatCode, $"Запись {path} — {format}. {Conversion(path)}");
-
-    public static Error NotWave(string path) =>
-        new(UnsupportedFormatCode, $"Запись {path} — не WAV. {Conversion(path)}");
-
-    private static string Conversion(string path) =>
-        "Нужны WAV 16 кГц, моно или стерео, PCM 16 бит или float 32. Перевести с сохранением каналов:\n" +
-        $"  ffmpeg -i \"{path}\" -ar {SpeechAudio.SampleRate} -sample_fmt s16 <выход>.wav\n" +
-        "Больше двух каналов или нужен один — добавить -ac 1 (всё уйдёт в «Собеседники»).";
-}

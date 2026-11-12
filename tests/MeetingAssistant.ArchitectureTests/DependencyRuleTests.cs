@@ -23,6 +23,8 @@ public sealed class DependencyRuleTests
     private static readonly Assembly DomainAssembly = typeof(Channel).Assembly;
     private static readonly Assembly ApplicationAssembly = typeof(ICommand).Assembly;
     private static readonly Assembly InfrastructureAssembly = typeof(Infrastructure.DependencyInjection).Assembly;
+    // Типы точки входа внутренние: сборка — по имени исполняемого файла.
+    private static readonly Assembly CliAssembly = Assembly.Load("meeting");
 
     [Fact]
     public void SharedKernel_WhenInspected_DependsOnNoOtherLayer()
@@ -46,6 +48,12 @@ public sealed class DependencyRuleTests
     public void Infrastructure_WhenInspected_DoesNotKnowEntryPoint()
     {
         AssertNoDependency(InfrastructureAssembly, CliNamespace);
+    }
+
+    [Fact]
+    public void Cli_WhenInspected_DoesNotKnowAudioOrSpeechLibraries()
+    {
+        AssertNoDependency(CliAssembly, ExternalAudioAndSpeech);
     }
 
     private static void AssertNoDependency(Assembly assembly, params string[] forbidden)

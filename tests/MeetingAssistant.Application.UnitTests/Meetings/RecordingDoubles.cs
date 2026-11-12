@@ -62,9 +62,10 @@ internal sealed class HoldingDetector : IVoiceActivityDetector
 }
 
 /// <summary>
-/// Источник с заданными кусками; бесконечный после них ждёт отмены, как живой захват.
+/// Источник с заданными кусками; бесконечный после них ждёт отмены, как живой захват; со сбоем — бросает его.
 /// </summary>
-internal sealed class ScriptedSource(IReadOnlyList<AudioChunk> chunks, bool endless = false) : IAudioSource
+internal sealed class ScriptedSource(IReadOnlyList<AudioChunk> chunks, bool endless = false, Exception? failure = null)
+    : IAudioSource
 {
     private readonly TaskCompletionSource _exhausted = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -85,6 +86,11 @@ internal sealed class ScriptedSource(IReadOnlyList<AudioChunk> chunks, bool endl
         }
 
         _exhausted.TrySetResult();
+
+        if (failure is not null)
+        {
+            throw failure;
+        }
 
         if (endless)
         {

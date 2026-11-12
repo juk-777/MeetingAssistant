@@ -1,5 +1,6 @@
 using MeetingAssistant.Application.Meetings;
 using MeetingAssistant.Application.Meetings.Recording;
+using MeetingAssistant.Infrastructure.Audio;
 using MeetingAssistant.Infrastructure.Speech;
 using MeetingAssistant.Infrastructure.Storage;
 using Microsoft.Extensions.Configuration;
@@ -35,6 +36,8 @@ public static class DependencyInjection
         services.AddSingleton<ICurrentMeeting, CurrentMeetingFile>();
         services.AddSingleton<ITranscriptWriter, TranscriptFile>();
         services.AddSingleton<IWakeEventWriter, EventsFile>();
+
+        services.AddSingleton<ILiveCapture, LiveCapture>();
 
         return services;
     }

@@ -31,6 +31,9 @@ public sealed record DetectedPhrase(TimeSpan Start, ReadOnlyMemory<float> Sample
 /// <summary>
 /// Источник звука встречи: запись с диска или живой захват.
 /// </summary>
+/// <remarks>
+/// Потерю устройства источник сообщает <see cref="AudioSourceException"/>.
+/// </remarks>
 public interface IAudioSource
 {
     IAsyncEnumerable<AudioChunk> Read(CancellationToken cancellationToken);
@@ -63,7 +66,7 @@ public interface IVoiceActivityDetectorFactory
 public interface IMeetingRecorder
 {
     /// <summary>
-    /// Распознаёт фразы источника до его конца или отмены, затем останавливает встречу.
+    /// Распознаёт фразы источника до его конца, отмены или потери устройства, затем останавливает встречу.
     /// </summary>
     Task<Result> Record(IAudioSource source, CancellationToken cancellationToken);
 }

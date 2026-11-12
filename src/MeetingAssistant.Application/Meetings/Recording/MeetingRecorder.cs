@@ -31,10 +31,11 @@ internal sealed class MeetingRecorder(
         Task<Result> recognition = RecognizeAll(phrases.Reader, feeding);
 
         Result recognized;
+        AudioSourceException? sourceLost;
 
         try
         {
-            await Feed(source, phrases.Writer, feeding.Token);
+            sourceLost = await Feed(source, phrases.Writer, feeding.Token);
         }
         finally
         {
@@ -47,10 +48,18 @@ internal sealed class MeetingRecorder(
         }
 
         // Без токена отмены: после Ctrl+C встреча всё равно получает конец записи.
-        return await stopMeeting.Handle(new StopMeeting(), CancellationToken.None);
+        Result stopped = await stopMeeting.Handle(new StopMeeting(), CancellationToken.None);
+
+        return stopped.IsSuccess && sourceLost is not null
+            ? Result.Failure(MeetingScenarioErrors.AudioSourceFailed(sourceLost.Message))
+            : stopped;
     }
 
-    private async Task Feed(IAudioSource source, ChannelWriter<RecognizeSpeech> phrases, CancellationToken cancellationToken)
+    /// <returns>Потеря устройства, если подача кончилась ею.</returns>
+    private async Task<AudioSourceException?> Feed(
+        IAudioSource source,
+        ChannelWriter<RecognizeSpeech> phrases,
+        CancellationToken cancellationToken)
     {
         var detectors = new Dictionary<Channel, IVoiceActivityDetector>();
 
@@ -66,10 +75,18 @@ internal sealed class MeetingRecorder(
 
                 Enqueue(phrases, chunk.Channel, detector.Accept(chunk.Samples));
             }
+
+            return null;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Отмена — штатный конец подачи: уже вырезанные фразы распознаются, встреча останавливается.
+            return null;
+        }
+        catch (AudioSourceException exception)
+        {
+            // Записанное цело: фразы распознаются, встреча останавливается с концом записи, наружу — отказ.
+            return exception;
         }
         finally
         {
