@@ -224,16 +224,15 @@ ffmpeg -i <запись> -ac 1 -ar 16000 -sample_fmt s16 samples/call1.wav
 
 ## Модели
 
-Источник — релиз `asr-models` репозитория k2-fsa/sherpa-onnx:
+Источник — релиз `asr-models` репозитория k2-fsa/sherpa-onnx. Рабочие модели — GigaAM v3 CTC punct (163 МБ)
+и `silero_vad.onnx` — кладёт в `models/` `scripts/download-models.sh` со сверкой SHA-256; приложению их ставит
+`scripts/install.ps1`. Только для повтора сравнения — T-one (128 МБ):
 
 ```
-base=https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models
-curl -sSLO $base/sherpa-onnx-nemo-ctc-punct-giga-am-v3-russian-2025-12-16.tar.bz2   # 163 МБ, рабочая модель
-curl -sSLO $base/silero_vad.onnx                                                     # VAD
-curl -sSLO $base/sherpa-onnx-streaming-t-one-russian-2025-09-08.tar.bz2             # 128 МБ, только для повтора сравнения
+curl -sSLO https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-t-one-russian-2025-09-08.tar.bz2
 ```
 
 `bzip2` в WSL нет — распаковка через Python: `python3 -c "import tarfile;tarfile.open('<файл>').extractall('models')"`.
-В `models/` уже лежат GigaAM v3 CTC punct и `silero_vad.onnx`. Turbo для `prototype/wnet` —
+Turbo для `prototype/wnet` —
 `ggml-large-v3-turbo-q5_0.bin` (Whisper.net качает его через `WhisperGgmlDownloader`; вручную —
 `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin`, 574 МБ).

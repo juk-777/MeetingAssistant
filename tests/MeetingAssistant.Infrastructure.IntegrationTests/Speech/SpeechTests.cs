@@ -71,7 +71,7 @@ public sealed class SpeechTests
     }
 
     [Fact]
-    public void Validate_WhenModelsMissing_FailsWithDownloadCommand()
+    public void Validate_WhenModelsMissing_FailsNamingFileAndWhereToGetModels()
     {
         DirectoryInfo empty = Directory.CreateTempSubdirectory("meeting-assistant-models-");
 
@@ -84,7 +84,7 @@ public sealed class SpeechTests
             result.Failed.ShouldBeTrue();
             string message = result.FailureMessage.ShouldNotBeNull();
             message.ShouldContain(SpeechModels.Vad(empty.FullName));
-            message.ShouldContain($"curl -sSLO $base/{SpeechModels.RecognizerDirectory}.tar.bz2");
+            message.ShouldContain(SpeechModels.DownloadHint);
         }
         finally
         {
