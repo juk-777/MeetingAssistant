@@ -11,6 +11,9 @@
     <File Path="Directory.Build.props" />
     <File Path="Directory.Packages.props" />
   </Folder>
+  <Folder Name="/Solution Items/.claude-plugin/">
+    <File Path=".claude-plugin/marketplace.json" />
+  </Folder>
   <Folder Name="/Solution Items/docs/">
     <File Path="docs/architecture.md" />
     <File Path="docs/decisions.md" />
@@ -23,6 +26,7 @@
     <File Path="docs/plans/2026-11-10-meeting-files-and-replay.md" />
     <File Path="docs/plans/2026-11-10-meeting-skill.md" />
     <File Path="docs/plans/2026-11-12-device-packet-time.md" />
+    <File Path="docs/plans/2026-11-12-distribution.md" />
     <File Path="docs/plans/2026-11-12-install-and-start.md" />
     <File Path="docs/plans/_template.md" />
   </Folder>
@@ -32,8 +36,12 @@
     <File Path="docs/specs/2026-11-10-meeting-files-and-replay.md" />
     <File Path="docs/specs/2026-11-10-meeting-skill.md" />
     <File Path="docs/specs/2026-11-12-device-packet-time.md" />
+    <File Path="docs/specs/2026-11-12-distribution.md" />
     <File Path="docs/specs/2026-11-12-install-and-start.md" />
     <File Path="docs/specs/_template.md" />
+  </Folder>
+  <Folder Name="/Solution Items/plugins/meeting/.claude-plugin/">
+    <File Path="plugins/meeting/.claude-plugin/plugin.json" />
   </Folder>
   <Folder Name="/Solution Items/plugins/meeting/skills/meeting/">
     <File Path="plugins/meeting/skills/meeting/SKILL.md" />
@@ -41,6 +49,7 @@
   <Folder Name="/Solution Items/plugins/meeting/skills/meeting/scripts/">
     <File Path="plugins/meeting/skills/meeting/scripts/meeting-dir" />
     <File Path="plugins/meeting/skills/meeting/scripts/meeting-hint" />
+    <File Path="plugins/meeting/skills/meeting/scripts/meeting-install" />
     <File Path="plugins/meeting/skills/meeting/scripts/meeting-notify" />
     <File Path="plugins/meeting/skills/meeting/scripts/meeting-start" />
     <File Path="plugins/meeting/skills/meeting/scripts/meeting-watch" />

@@ -39,6 +39,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# Вывод в UTF-8: запущенный из WSL или скиллом скрипт пишет в канал, и кодовая страница консоли испортила бы кириллицу.
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 # Индикатор Invoke-WebRequest в Windows PowerShell 5.1 замедляет загрузку в разы.
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12

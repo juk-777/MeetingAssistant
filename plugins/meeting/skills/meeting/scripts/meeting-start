@@ -5,7 +5,9 @@
 # окна. Новая встреча узнаётся по current.json с другим id: прошлая встреча за новую не сойдёт, даже если запуск
 # не удался. Ждать — до MEETING_START_TIMEOUT секунд (умолчание 60: загрузка модели).
 #
-# meeting.exe — по месту установки (scripts/install.ps1), а не из PATH, и каталог моделей перечитывается из реестра:
+# Код 3 — приложение записи не установлено (нет корня встреч или meeting.exe): скилл предлагает meeting-install.
+#
+# meeting.exe — по месту установки (install.ps1), а не из PATH, и каталог моделей перечитывается из реестра:
 # окружение WSL и уже открытых окон не видит того, что установка задала после их старта. Корень встреч окну
 # передаётся тот же, по которому скрипт ждёт новую встречу (meeting-dir --root), — иначе запись легла бы в один
 # корень, а ожидание шло бы в другом.
@@ -48,12 +50,15 @@ $ErrorActionPreference = "Stop"
 $env:Storage__MeetingsRoot = $env:MEETING_START_ROOT
 $env:Speech__ModelsDirectory = [Environment]::GetEnvironmentVariable("Speech__ModelsDirectory", "User")
 $meeting = Join-Path $env:LOCALAPPDATA "MeetingAssistant\app\meeting.exe"
-if (-not (Test-Path $meeting)) { [Console]::Error.WriteLine("Нет $meeting — установить: scripts/install.ps1"); exit 1 }
+if (-not (Test-Path $meeting)) { [Console]::Error.WriteLine("Приложение записи не установлено: нет $meeting. Поставить — meeting-install."); exit 3 }
 $command = "`"$meeting`" start `"$env:MEETING_START_NAME`""
 if ($env:MEETING_START_GLOSSARY) { $command += " --glossary `"$env:MEETING_START_GLOSSARY`"" }
 # Через cmd /c и pause при отказе: окно, в котором meeting сразу отказал, не закрывается, и причину видно.
 Start-Process -FilePath cmd.exe -ArgumentList "/c `"$command || pause`"" -WorkingDirectory $env:USERPROFILE
-' || fail "Окно записи не открылось."
+' && opened=0 || opened=$?
+# Код 3 — приложение записи не установлено: скилл по нему предлагает установку.
+[ "$opened" -ne 3 ] || exit 3
+[ "$opened" -eq 0 ] || fail "Окно записи не открылось."
 
 deadline=$((SECONDS + ${MEETING_START_TIMEOUT:-60}))
 while [ $SECONDS -lt $deadline ]; do

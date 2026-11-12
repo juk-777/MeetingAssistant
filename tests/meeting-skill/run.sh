@@ -298,15 +298,11 @@ stub_reg() {
     chmod +x "$work/stub-reg/powershell.exe"
 }
 
-dir_WhenRootNotSet_FailsNamingBothSources() {
+dir_WhenRootNotSet_ExitsAsNotInstalled() {
     stub_reg
-    local message
-    if message=$(PATH="$work/stub-reg:$PATH" MEETINGS_ROOT="" bash "$bin/meeting-dir" 2>&1); then
-        echo "отказа нет"
-        return 1
-    fi
-    [[ $message == *MEETINGS_ROOT* && $message == *Storage__MeetingsRoot* && $message == *install.ps1* ]] ||
-        { echo "$message"; return 1; }
+    local code=0
+    PATH="$work/stub-reg:$PATH" MEETINGS_ROOT="" bash "$bin/meeting-dir" > /dev/null 2>&1 || code=$?
+    [ "$code" -eq 3 ] || { echo "код: $code"; return 1; }
 }
 
 dir_WhenRootOnlyInWindows_TakesItFromRegistry() {
@@ -426,6 +422,59 @@ start_WhenGlossaryGiven_PassesItAsWindowsPath() {
         timeout 15 bash "$bin/meeting-start" 'x' "$work/glossary.txt" > /dev/null || return 1
 
     [ "$(sed -n 2p "$work/start.args")" = 'D:\glossary.txt' ] || { cat "$work/start.args"; return 1; }
+}
+
+start_WhenAppNotInstalled_ExitsAsNotInstalledWithoutWaiting() {
+    stub_start
+    printf 'exit 3\n' >> "$work/stub-start/powershell.exe"
+
+    local code=0
+    PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=10 \
+        timeout 5 bash "$bin/meeting-start" 'x' > /dev/null 2>&1 || code=$?
+    [ "$code" -eq 3 ] || { echo "код: $code"; return 1; }
+}
+
+start_WhenRootNotSet_ExitsAsNotInstalled() {
+    stub_reg
+    local code=0
+    PATH="$work/stub-reg:$PATH" MEETINGS_ROOT="" timeout 5 bash "$bin/meeting-start" 'x' > /dev/null 2>&1 || code=$?
+    [ "$code" -eq 3 ] || { echo "код: $code"; return 1; }
+}
+
+# Заглушка powershell.exe для meeting-install: пишет адрес релизов и команду, выходит с кодом из setup.code.
+stub_setup() {
+    rm -rf "$work/stub-setup"
+    mkdir -p "$work/stub-setup"
+    cat > "$work/stub-setup/powershell.exe" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$MEETING_RELEASES" > "$work/setup.releases"
+printf '%s\n' "\$*" > "$work/setup.command"
+exit \$(cat "$work/setup.code")
+EOF
+    chmod +x "$work/stub-setup/powershell.exe"
+}
+
+setup_WhenRun_RunsReleaseInstallerAndPassesItsExitCode() {
+    stub_setup
+    echo 7 > "$work/setup.code"
+
+    local code=0
+    PATH="$work/stub-setup:$PATH" bash "$bin/meeting-install" > /dev/null 2>&1 || code=$?
+
+    [ "$code" -eq 7 ] || { echo "код: $code"; return 1; }
+    [ "$(cat "$work/setup.releases")" = 'https://github.com/juk-777/MeetingAssistant/releases' ] ||
+        { cat "$work/setup.releases"; return 1; }
+    grep -q 'latest/download/install.ps1' "$work/setup.command" && grep -q -- '-File' "$work/setup.command" ||
+        { cat "$work/setup.command"; return 1; }
+}
+
+setup_WhenReleasesGiven_UsesThem() {
+    stub_setup
+    echo 0 > "$work/setup.code"
+
+    PATH="$work/stub-setup:$PATH" MEETING_RELEASES='D:\releases' bash "$bin/meeting-install" > /dev/null 2>&1 || return 1
+
+    [ "$(cat "$work/setup.releases")" = 'D:\releases' ] || { cat "$work/setup.releases"; return 1; }
 }
 
 start_WhenNameBreaksWindowsCommandLine_RefusesWithoutStarting() {
