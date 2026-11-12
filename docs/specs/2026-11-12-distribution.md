@@ -62,7 +62,8 @@ powershell -ExecutionPolicy Bypass -File $env:TEMP\ma-install.ps1
 ### Скилл — плагин Claude Code из этого репозитория
 
 Репозиторий — маркетплейс плагинов (`.claude-plugin/marketplace.json`), плагин `meeting` — каталог
-`plugins/meeting/` со скиллом `skills/meeting/` (туда переезжает `skills/meeting/` со скриптами и тестами).
+`plugins/meeting/` со скиллом `skills/meeting/` (туда переезжает `skills/meeting/` со скриптами; тесты — в
+`tests/meeting-skill/`, вне плагина).
 Пользователь ставит его в Claude Code:
 
 ```
@@ -95,13 +96,15 @@ powershell -ExecutionPolicy Bypass -File $env:TEMP\ma-install.ps1
 
 ## Критерии готовности слайса
 
-1. `scripts/test.sh` и `scripts/inspect.sh` — зелёные; тесты скилла — из `plugins/meeting/skills/meeting/`.
+1. `scripts/test.sh` и `scripts/inspect.sh` — зелёные; тесты скилла — `tests/meeting-skill/` (вне каталога плагина,
+   чтобы не уезжать к пользователям; уточнено на этапе 1).
 2. CI: pull request — тесты зелёные на GitHub Actions и обязательны для слияния в `main`; тег `v0.1.0` — релиз
    с тремя файлами, `meeting --version` — `0.1.0`; тег, не совпадающий с версией плагина, — отказ.
 3. На этой машине по README пользователя: установка из релиза одной командой (из PowerShell и из WSL), плагин
    из маркетплейса вместо ссылки, `/meeting start` в сессии другого проекта — встреча пишется и сессия
    подключается. `meeting` не установлен — скилл предлагает поставить и ставит.
-4. README: пользователь — «Windows» и «WSL»; разработчик — отдельным разделом; `docs/architecture.md` — по факту.
+4. README — варианты установки (приложение записи из PowerShell и WSL, скилл плагином, из исходников) без деления
+   на «пользователя» и «разработчика» (решение мейнтейнера); `docs/architecture.md` — по факту.
 
 ## Границы
 

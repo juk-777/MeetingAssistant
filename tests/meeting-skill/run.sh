@@ -448,6 +448,7 @@ stub_setup() {
     cat > "$work/stub-setup/powershell.exe" <<EOF
 #!/usr/bin/env bash
 printf '%s\n' "\$MEETING_RELEASES" > "$work/setup.releases"
+printf '%s\n' "\$WSLENV" > "$work/setup.wslenv"
 printf '%s\n' "\$*" > "$work/setup.command"
 exit \$(cat "$work/setup.code")
 EOF
@@ -464,8 +465,17 @@ setup_WhenRun_RunsReleaseInstallerAndPassesItsExitCode() {
     [ "$code" -eq 7 ] || { echo "код: $code"; return 1; }
     [ "$(cat "$work/setup.releases")" = 'https://github.com/juk-777/MeetingAssistant/releases' ] ||
         { cat "$work/setup.releases"; return 1; }
-    grep -q 'latest/download/install.ps1' "$work/setup.command" && grep -q -- '-File' "$work/setup.command" ||
-        { cat "$work/setup.command"; return 1; }
+    grep -q 'latest/download/install.ps1' "$work/setup.command" && grep -q -- '-File' "$work/setup.command" &&
+        grep -q -- '-ReleaseBase \$releases' "$work/setup.command" || { cat "$work/setup.command"; return 1; }
+}
+
+setup_WhenRunFromWsl_PassesReleasesToWindows() {
+    stub_setup
+    echo 0 > "$work/setup.code"
+
+    PATH="$work/stub-setup:$PATH" WSLENV="USERPROFILE/p" bash "$bin/meeting-install" > /dev/null 2>&1 || return 1
+
+    [[ ":$(cat "$work/setup.wslenv"):" == *:MEETING_RELEASES:* ]] || { cat "$work/setup.wslenv"; return 1; }
 }
 
 setup_WhenReleasesGiven_UsesThem() {

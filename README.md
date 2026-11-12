@@ -4,8 +4,8 @@
 sherpa-onnx), транскрипт в файл, подсказки рабочей сессии Claude Code по событиям — вопрос, термин, обращение.
 
 Две части:
-- **приложение записи `meeting`** — процесс Windows: пишет микрофон («Я») и системный звук («Собеседники»),
-  распознаёт речь и дописывает транскрипт в каталог встречи;
+- **приложение записи `meeting`** — пишет микрофон («Я») и системный звук («Собеседники»), распознаёт речь
+  и дописывает транскрипт в каталог встречи. Пока только Windows: звук захватывается через WASAPI; Linux — #16;
 - **скилл `/meeting` для Claude Code** — сессия того проекта, о котором созвон, запускает запись, просыпается
   по событиям и подсказывает по коду и докам проекта; после встречи пишет протокол.
 
@@ -18,14 +18,14 @@ sherpa-onnx), транскрипт в файл, подсказки рабоче�
 PowerShell:
 
 ```powershell
-iwr https://github.com/juk-777/MeetingAssistant/releases/latest/download/install.ps1 -OutFile $env:TEMP\ma-install.ps1
+iwr https://github.com/juk-777/MeetingAssistant/releases/latest/download/install.ps1 -OutFile $env:TEMP\ma-install.ps1 -UseBasicParsing
 powershell -ExecutionPolicy Bypass -File $env:TEMP\ma-install.ps1
 ```
 
 Из терминала WSL — то же через `powershell.exe`:
 
 ```bash
-powershell.exe -c 'iwr https://github.com/juk-777/MeetingAssistant/releases/latest/download/install.ps1 -OutFile $env:TEMP\ma-install.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\ma-install.ps1'
+powershell.exe -c 'iwr https://github.com/juk-777/MeetingAssistant/releases/latest/download/install.ps1 -OutFile $env:TEMP\ma-install.ps1 -UseBasicParsing; powershell -ExecutionPolicy Bypass -File $env:TEMP\ma-install.ps1'
 ```
 
 Скрипт берёт `meeting` из последнего релиза (со своим рантаймом .NET — ставить .NET не нужно) и модели
@@ -48,18 +48,24 @@ powershell.exe -c 'iwr https://github.com/juk-777/MeetingAssistant/releases/late
 
 ### Из исходников
 
-Нужны .NET SDK 10 в Windows (в `PATH` или в `%USERPROFILE%\.dotnet`), в WSL — git, curl, python3, jq.
-Репозиторий — на диске Windows: приложение собирается и запускается из Windows.
+В WSL — нужны .NET SDK 10, git, curl, python3, jq; клон в любом каталоге:
 
 ```bash
-cd /mnt/d && git clone https://github.com/juk-777/MeetingAssistant.git && cd MeetingAssistant
-./scripts/download-models.sh                                              # модели в models/, 163 МБ
-powershell.exe -ExecutionPolicy Bypass -File scripts/install.ps1 -FromSource   # сборка и установка meeting
-./scripts/install-skill.sh                                                # скилл — ссылкой на рабочую копию
+git clone https://github.com/juk-777/MeetingAssistant.git && cd MeetingAssistant
+./scripts/install-wsl.sh        # сборка meeting в WSL и установка в Windows
+./scripts/install-skill.sh      # скилл — ссылкой на рабочую копию
+./scripts/download-models.sh    # модели в models/ — для тестов (./scripts/test.sh), 163 МБ
 ```
 
-Ссылка вместо плагина: правка скилла в рабочей копии видна сразу. Тесты — `./scripts/test.sh`, порядок
-разработки — `docs/development.md`.
+В PowerShell, без WSL — нужны .NET SDK 10 (в `PATH` или в `%USERPROFILE%\.dotnet`) и git:
+
+```powershell
+git clone https://github.com/juk-777/MeetingAssistant.git; cd MeetingAssistant
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -FromSource
+```
+
+Ссылка `install-skill.sh` вместо плагина: правка скилла в рабочей копии видна сразу. Порядок разработки —
+`docs/development.md`.
 
 ## Встреча
 
@@ -78,9 +84,10 @@ powershell.exe -ExecutionPolicy Bypass -File scripts/install.ps1 -FromSource   #
 
 ## Обновление и удаление
 
-- Приложение записи — та же команда установки (из исходников — `install.ps1 -FromSource`): программа заменяется,
+- Приложение записи — та же команда установки (из исходников — `install-wsl.sh` или `install.ps1 -FromSource`): программа заменяется,
   корень встреч и модели остаются. Во время встречи — отказ.
-- Скилл — `/plugin marketplace update meeting-assistant`.
+- Скилл — в терминале `claude plugin marketplace update meeting-assistant && claude plugin update meeting@meeting-assistant`,
+  затем перезапуск сессии Claude Code.
 - Удаление: `/plugin uninstall meeting@meeting-assistant` (или ссылка `~/.claude/skills/meeting`), каталог
   `%LOCALAPPDATA%\MeetingAssistant`, переменные пользователя `Storage__MeetingsRoot` и `Speech__ModelsDirectory`,
   строка `…\MeetingAssistant\app` в `PATH` пользователя.

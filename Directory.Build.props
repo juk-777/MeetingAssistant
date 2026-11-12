@@ -14,6 +14,8 @@
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <!-- Версию выпуска передаёт CI из тега (-p:Version); сборка без тега видна как сборка разработчика. -->
     <Version>0.0.0-dev</Version>
+    <!-- Версия программы печатается как есть, без хэша коммита, который SDK иначе дописывает через «+». -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
   <!--

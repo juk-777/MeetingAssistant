@@ -31,13 +31,15 @@ fi
 
 if [ ! -f "$recognizer/model.int8.onnx" ] || [ ! -f "$recognizer/tokens.txt" ]; then
     fetch "$recognizer.tar.bz2" "$recognizer_sha256"
+    # Распаковка — во временный каталог: оборванная посередине не оставит в models/ модель, которая выглядит целой.
+    rm -rf .unpack && mkdir .unpack
     # bzip2 есть не везде (в WSL Ubuntu по умолчанию нет) — тогда распаковка модулем tarfile Python.
     if command -v bzip2 > /dev/null; then
-        tar -xjf "$recognizer.tar.bz2"
+        tar -xjf "$recognizer.tar.bz2" -C .unpack
     else
-        python3 -c 'import sys, tarfile; tarfile.open(sys.argv[1]).extractall(".")' "$recognizer.tar.bz2"
+        python3 -c 'import sys, tarfile; tarfile.open(sys.argv[1]).extractall(sys.argv[2])' "$recognizer.tar.bz2" .unpack
     fi
-    rm "$recognizer.tar.bz2"
+    rm -rf "$recognizer" && mv ".unpack/$recognizer" . && rm -rf .unpack "$recognizer.tar.bz2"
 fi
 
 echo "Модели: $models"

@@ -57,7 +57,7 @@ def render():
     lines.extend(f'    <File Path="{path}" />' for path in ROOT_FILES if path in tracked)
     lines.append("  </Folder>")
 
-    in_trees = [path for path in tracked if path.split("/", 1)[0] in TREES]
+    in_trees = [path for path in tracked if any(path.startswith(tree + "/") for tree in TREES)]
     project_dirs = {posixpath.dirname(path) for path in in_trees if path.endswith(PROJECT_EXTENSION)}
 
     def owned_by_project(path):

@@ -69,7 +69,7 @@
 
 `.github/workflows/ci.yml` — pull request и `main`: сборка, тесты с моделями из кеша. `release.yml` — тег `v*`:
 тесты, сверка тега с версией плагина, сборка `win-x64` с версией, zip, SHA-256, релиз с `install.ps1`.
-Проверка `ci` — обязательна для слияния в `main`.
+Проверка `test` (задача workflow `ci`) — обязательна для слияния в `main`.
 
 **Готово, когда:** pull request этой ветки — зелёный прогон на GitHub Actions.
 

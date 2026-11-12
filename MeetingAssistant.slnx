@@ -77,11 +77,15 @@
     <File Path="scripts/download-models.sh" />
     <File Path="scripts/inspect.sh" />
     <File Path="scripts/install-skill.sh" />
+    <File Path="scripts/install-wsl.sh" />
     <File Path="scripts/install.ps1" />
     <File Path="scripts/mutate.sh" />
     <File Path="scripts/release-version.sh" />
     <File Path="scripts/slnx-folders.sh" />
     <File Path="scripts/test.sh" />
+  </Folder>
+  <Folder Name="/Solution Items/tests/meeting-skill/">
+    <File Path="tests/meeting-skill/run.sh" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/MeetingAssistant.SharedKernel/MeetingAssistant.SharedKernel.csproj" />
