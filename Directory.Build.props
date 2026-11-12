@@ -12,6 +12,8 @@
     <NuGetAuditMode>all</NuGetAuditMode>
     <NuGetAuditLevel>low</NuGetAuditLevel>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- Версию выпуска передаёт CI из тега (-p:Version); сборка без тега видна как сборка разработчика. -->
+    <Version>0.0.0-dev</Version>
   </PropertyGroup>
 
   <!--
