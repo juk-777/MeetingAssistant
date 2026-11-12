@@ -1,0 +1,23 @@
+Читать обычным темпом, как на созвоне, английское — как произносишь в жизни. Запинки не страшны, не перечитывать.
+
+Так, давайте начнём стендап. По спринту: вчера смёржил pull request с outbox, ревью прошло, два approve. На staging задеплоили, но в Grafana видно, что p99 latency выросла почти вдвое. Похоже, это retry в consumer: при timeout от RabbitMQ он повторяет без backoff, и circuit breaker не успевает открыться.
+
+Я предлагаю завести feature flag и откатить через rollback, пока не разберёмся. Hotfix в release ветку не хочу тащить без code review.
+
+По кэшу: в Redis у нас cache miss под нагрузкой, TTL стоит пять минут, и когда ключ протухает, все реплики идут в Postgres одновременно — классический cache stampede. Можно взять distributed lock или просто jitter на TTL. Это trade-off: lock надёжнее, но добавляет ещё один round trip.
+
+Теперь Kubernetes. Health check у нового сервиса падает, потому что readiness probe дёргает endpoint, который ходит в базу. Liveness и readiness надо развести. Helm chart я поправлю, заодно resource limits выставим, а то pod съедает всю память и его убивает OOM killer.
+
+По интеграции с партнёром: они шлют webhook, payload в JSON, но idempotency key не передают. Значит, дедупликацию делаем у себя, по message id. Авторизация через OAuth, access token живёт час, refresh token — тридцать дней. В Swagger у них описание устарело, я им написал.
+
+Entity Framework: миграция на новую колонку с индексом. На проде таблица большая, поэтому index создаём concurrently, иначе словим lock на запись. И query с Include надо переписать на projection, там N plus one.
+
+Из архитектурного: я бы не тащил сюда event sourcing, это one-way door. Сначала Unit of Work и обычный repository, а CQRS отделим, когда read model реально понадобится. Для MVP хватит модульного монолита.
+
+По CI/CD: pipeline в GitLab падает на шаге integration tests, Testcontainers не поднимает Postgres, потому что Docker на раннере старый. Я открыл issue, и пока поставил тест в skip, но это техдолг, в backlog.
+
+Про Kafka: throughput нам пока не нужен такой, RabbitMQ хватает. Но partition key надо продумать заранее, если будем переезжать.
+
+Organizational: deadline по релизу в пятницу, stakeholder хочет демо в четверг. Onboarding нового разработчика беру на себя, ownership по платёжному модулю остаётся за мной. Roadmap обновлю после ретро.
+
+Всё, у кого блокеры? Если нет — расходимся, follow-up напишу в чат.

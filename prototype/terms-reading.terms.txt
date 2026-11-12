@@ -1,0 +1,83 @@
+pull request
+outbox
+approve
+staging
+Grafana
+p99
+latency
+retry
+consumer
+timeout
+RabbitMQ
+backoff
+circuit breaker
+feature flag
+rollback
+hotfix
+release
+code review
+Redis
+cache miss
+TTL
+Postgres
+cache stampede
+distributed lock
+jitter
+trade-off
+lock
+round trip
+Kubernetes
+health check
+readiness probe
+endpoint
+liveness
+readiness
+Helm chart
+resource limits
+pod
+OOM killer
+webhook
+payload
+JSON
+idempotency key
+message id
+OAuth
+access token
+refresh token
+Swagger
+Entity Framework
+index
+concurrently
+lock
+query
+Include
+projection
+N plus one
+event sourcing
+one-way door
+Unit of Work
+repository
+CQRS
+read model
+MVP
+CI/CD
+pipeline
+GitLab
+integration tests
+Testcontainers
+Postgres
+Docker
+issue
+skip
+backlog
+Kafka
+throughput
+RabbitMQ
+partition key
+Organizational
+deadline
+stakeholder
+Onboarding
+ownership
+Roadmap
+follow-up
