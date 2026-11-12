@@ -27,7 +27,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: models
-          key: models-gigaam-v3-ctc-punct-2025-12-16-silero-vad
+          key: models-gigaam-v3-ctc-punct-2025-12-16-silero-vad-whisper-tiny
 
       - name: Модели из релиза sherpa-onnx
         if: steps.models.outputs.cache-hit != 'true'

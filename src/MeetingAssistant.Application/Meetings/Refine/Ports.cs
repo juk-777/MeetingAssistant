@@ -23,14 +23,19 @@ public interface IRecordedMeetings
 }
 
 /// <summary>
-/// Модель распознавателя уточнения: готовится до первой фразы.
+/// Распознаватель уточнения — второй, не тот, что пишет встречу вживую.
 /// </summary>
-public interface IRefineModel
+public interface IRefineRecognizer
 {
     /// <summary>
-    /// Кладёт модель на место, если её нет; отказ — модель не получена.
+    /// Готовит модель до первой фразы: кладёт на место, если её нет; отказ — модель не получена.
     /// </summary>
     Task<Result> Prepare(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Распознаёт фразу целиком: 16 кГц, моно, float.
+    /// </summary>
+    Task<string> Recognize(ReadOnlyMemory<float> samples, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -52,15 +57,4 @@ public interface IRefinedTranscriptDraft : IAsyncDisposable
     Task Append(Utterance utterance, CancellationToken cancellationToken);
 
     Task Complete(CancellationToken cancellationToken);
-}
-
-/// <summary>
-/// Ход уточнения для человека.
-/// </summary>
-public interface IRefineProgress
-{
-    /// <param name="position">До какого места записи распознано.</param>
-    /// <param name="duration">Длина записи.</param>
-    /// <param name="utterances">Сколько строк записано.</param>
-    void Recognized(TimeSpan position, TimeSpan duration, int utterances);
 }

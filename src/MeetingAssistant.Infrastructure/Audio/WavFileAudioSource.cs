@@ -19,6 +19,11 @@ public sealed class WavFileAudioSource : IAudioSource
     /// </summary>
     public const int ChunkFrames = SpeechAudio.SampleRate / 10;
 
+    /// <summary>
+    /// Подача без темпа: кусок за куском, как только его взяли.
+    /// </summary>
+    public const double Unpaced = double.PositiveInfinity;
+
     private readonly string _path;
     private readonly int _channels;
     private readonly double _speed;
@@ -36,7 +41,7 @@ public sealed class WavFileAudioSource : IAudioSource
     /// Проверяет запись: 16 кГц, моно или стерео, PCM 16 бит или float 32.
     /// </summary>
     /// <param name="path">Путь к WAV.</param>
-    /// <param name="speed">Во сколько раз быстрее реального темпа, больше нуля.</param>
+    /// <param name="speed">Во сколько раз быстрее реального темпа, больше нуля; <see cref="Unpaced"/> — без темпа.</param>
     /// <param name="timeProvider">Часы подачи.</param>
     public static Result<IAudioSource> Open(string path, double speed, TimeProvider timeProvider)
     {

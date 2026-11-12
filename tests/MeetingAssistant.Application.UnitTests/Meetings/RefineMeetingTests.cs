@@ -25,6 +25,8 @@ public sealed class RefineMeetingTests : IDisposable
     // Полем, а не using-переменной теста: её захватывает лямбда двойника.
     private readonly CancellationTokenSource _cancellation = new();
 
+    private readonly IProgress<RefinePosition> _progress = Substitute.For<IProgress<RefinePosition>>();
+
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -35,7 +37,7 @@ public sealed class RefineMeetingTests : IDisposable
             ScriptedSource.Seconds(Channel.Others, 2),
             ScriptedSource.Seconds(Channel.Me, 3),
             ScriptedSource.Seconds(Channel.Others, 1));
-        _harness.RecognizerReturns(Text);
+        RecognizerReturns(Text);
 
         Result result = await Refine();
 
@@ -56,7 +58,7 @@ public sealed class RefineMeetingTests : IDisposable
     public async Task Handle_WhenSourceEnds_RecognizesPhraseCutOffByEndAndReleasesDetectors()
     {
         Recording(ScriptedSource.Seconds(Channel.Others, 2));
-        _harness.RecognizerReturns(Text);
+        RecognizerReturns(Text);
 
         await Refine();
 
@@ -68,7 +70,7 @@ public sealed class RefineMeetingTests : IDisposable
     public async Task Handle_WhenRecognizerReturnsBlank_WritesNoLineAndNumbersNextFromOne()
     {
         Recording(ScriptedSource.Seconds(Channel.Me, 1), ScriptedSource.Seconds(Channel.Me, 2));
-        _harness.Recognizer.Recognize(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<CancellationToken>())
+        _harness.RefineRecognizer.Recognize(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<CancellationToken>())
             .Returns(" ", $" {Text} ");
 
         await Refine();
@@ -89,7 +91,7 @@ public sealed class RefineMeetingTests : IDisposable
         Recording(source);
         var recognizing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var recognized = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _harness.Recognizer.Recognize(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<CancellationToken>())
+        _harness.RefineRecognizer.Recognize(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 recognizing.TrySetResult();
@@ -111,7 +113,7 @@ public sealed class RefineMeetingTests : IDisposable
     public async Task Handle_WhenLastLineBeingWritten_CompletesOnlyAfterItIsWritten()
     {
         Recording(ScriptedSource.Seconds(Channel.Me, 1));
-        _harness.RecognizerReturns(Text);
+        RecognizerReturns(Text);
         var appending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var appended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _harness.RefinedTranscripts.OnAppend = _ =>
@@ -139,7 +141,7 @@ public sealed class RefineMeetingTests : IDisposable
         Result result = await Refine();
 
         result.Error.ShouldBe(Refused);
-        await _harness.RefineModel.DidNotReceive().Prepare(Arg.Any<CancellationToken>());
+        await _harness.RefineRecognizer.DidNotReceive().Prepare(Arg.Any<CancellationToken>());
         _harness.RefinedTranscripts.Draft.ShouldBeNull();
     }
 
@@ -147,7 +149,7 @@ public sealed class RefineMeetingTests : IDisposable
     public async Task Handle_WhenModelNotPrepared_FailsBeforeTranscript()
     {
         Recording(ScriptedSource.Seconds(Channel.Me, 1));
-        _harness.RefineModel.Prepare(Arg.Any<CancellationToken>()).Returns(Result.Failure(Refused));
+        _harness.RefineRecognizer.Prepare(Arg.Any<CancellationToken>()).Returns(Result.Failure(Refused));
 
         Result result = await Refine();
 
@@ -159,7 +161,7 @@ public sealed class RefineMeetingTests : IDisposable
     public async Task Handle_WhenRecognitionFails_AbandonsTranscriptAndReleasesDetectors()
     {
         Recording(ScriptedSource.Seconds(Channel.Me, 1), ScriptedSource.Seconds(Channel.Me, 1));
-        _harness.Recognizer.Recognize(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<CancellationToken>())
+        _harness.RefineRecognizer.Recognize(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Распознаватель упал"));
 
         await Should.ThrowAsync<InvalidOperationException>(Refine());
@@ -177,12 +179,12 @@ public sealed class RefineMeetingTests : IDisposable
             ScriptedSource.Seconds(Channel.Me, 1),
             ScriptedSource.Seconds(Channel.Me, 1),
         ]));
-        _harness.Recognizer.Recognize(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<CancellationToken>())
+        _harness.RefineRecognizer.Recognize(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<CancellationToken>())
             .Returns(Text);
         _harness.RefinedTranscripts.OnAppend = async _ => await _cancellation.CancelAsync();
 
         await Should.ThrowAsync<OperationCanceledException>(
-            _harness.Handler<RefineMeeting>().Handle(new RefineMeeting(Directory), _cancellation.Token));
+            _harness.Handler<RefineMeeting>().Handle(new RefineMeeting(Directory, _progress), _cancellation.Token));
 
         Draft().Lines.ShouldNotBeEmpty();
         Draft().Abandoned.ShouldBeTrue();
@@ -192,15 +194,15 @@ public sealed class RefineMeetingTests : IDisposable
     public async Task Handle_WhenPhraseRecognized_ReportsItsEndAndLinesWritten()
     {
         Recording(ScriptedSource.Seconds(Channel.Me, 2), ScriptedSource.Seconds(Channel.Me, 3));
-        _harness.Recognizer.Recognize(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<CancellationToken>())
+        _harness.RefineRecognizer.Recognize(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<CancellationToken>())
             .Returns(Text, string.Empty);
 
         await Refine();
 
         Received.InOrder(() =>
         {
-            _harness.RefineProgress.Recognized(Seconds(2), Duration, 1);
-            _harness.RefineProgress.Recognized(Seconds(5), Duration, 1);
+            _progress.Report(new RefinePosition(Seconds(2), Duration, 1));
+            _progress.Report(new RefinePosition(Seconds(5), Duration, 1));
         });
     }
 
@@ -218,10 +220,13 @@ public sealed class RefineMeetingTests : IDisposable
     {
         _harness.RecordedMeetings.Open(Directory, Arg.Any<CancellationToken>())
             .Returns(Result.Success(new RecordedMeeting(source, Duration)));
-        _harness.RefineModel.Prepare(Arg.Any<CancellationToken>()).Returns(Result.Success());
+        _harness.RefineRecognizer.Prepare(Arg.Any<CancellationToken>()).Returns(Result.Success());
     }
 
-    private Task<Result> Refine() => _harness.Handler<RefineMeeting>().Handle(new RefineMeeting(Directory), Token);
+    private void RecognizerReturns(string text) =>
+        _harness.RefineRecognizer.Recognize(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<CancellationToken>()).Returns(text);
+
+    private Task<Result> Refine() => _harness.Handler<RefineMeeting>().Handle(new RefineMeeting(Directory, _progress), Token);
 
     private DraftTranscript Draft() => _harness.RefinedTranscripts.Draft.ShouldNotBeNull();
 }

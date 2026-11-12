@@ -32,9 +32,8 @@ internal sealed class ScenarioHarness : IDisposable
         services.AddSingleton(WakeEvents);
         services.AddSingleton<IVoiceActivityDetectorFactory>(Detectors);
         services.AddSingleton(RecordedMeetings);
-        services.AddSingleton(RefineModel);
+        services.AddSingleton(RefineRecognizer);
         services.AddSingleton<IRefinedTranscripts>(RefinedTranscripts);
-        services.AddSingleton(RefineProgress);
         services.AddApplication();
         _provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true });
     }
@@ -57,11 +56,9 @@ internal sealed class ScenarioHarness : IDisposable
 
     public IRecordedMeetings RecordedMeetings { get; } = Substitute.For<IRecordedMeetings>();
 
-    public IRefineModel RefineModel { get; } = Substitute.For<IRefineModel>();
+    public IRefineRecognizer RefineRecognizer { get; } = Substitute.For<IRefineRecognizer>();
 
     public DraftTranscripts RefinedTranscripts { get; } = new();
-
-    public IRefineProgress RefineProgress { get; } = Substitute.For<IRefineProgress>();
 
     public IMeetingRecorder Recorder() => _provider.GetRequiredService<IMeetingRecorder>();
 

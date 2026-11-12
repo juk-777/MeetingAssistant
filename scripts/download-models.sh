@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Модели распознавания в models/ репозитория: GigaAM v3 CTC с пунктуацией и Silero VAD из релиза sherpa-onnx,
-# со сверкой SHA-256. Уже лежащие не качаются. Нужны тестам и сборке из исходников; приложению их ставит install.ps1.
+# Whisper tiny (75 МБ) из whisper.cpp — со сверкой SHA-256. Уже лежащие не качаются. Нужны тестам и сборке
+# из исходников; приложению GigaAM и VAD ставит install.ps1. Whisper tiny — только тесту распознавателя уточнения:
+# он проверяет связку с Whisper.net, а не качество; модель уточнения (turbo) приложение качает само.
 #
 # Контрольные суммы — те же, что в scripts/install.ps1 (тест скилла сверяет оба места).
 #
@@ -12,14 +14,18 @@ vad=silero_vad.onnx
 vad_sha256=9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6
 recognizer=sherpa-onnx-nemo-ctc-punct-giga-am-v3-russian-2025-12-16
 recognizer_sha256=20e41e160efa6f2460a7ef6554cdbbb9e8fffb2b92e6bc708e9406bd8b9256ea
+# Ревизия закреплена: по main файл мог бы смениться и разойтись с суммой.
+whisper=https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1
+whisper_tiny=ggml-tiny.bin
+whisper_tiny_sha256=be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21
 
 models="$(cd "$(dirname "$0")/.." && pwd)/models"
 mkdir -p "$models"
 cd "$models"
 
-# fetch <файл> <sha256>: скачать во временный файл, сверить, только потом положить под своим именем.
+# fetch <файл> <sha256> [адрес каталога]: скачать во временный файл, сверить, только потом положить под своим именем.
 fetch() {
-    curl -fsSL --retry 3 -o "$1.part" "$release/$1"
+    curl -fsSL --retry 3 -o "$1.part" "${3:-$release}/$1"
     echo "$2  $1.part" | sha256sum -c --quiet - ||
         { rm -f "$1.part"; echo "Контрольная сумма $1 не совпала: файл повреждён или подменён." >&2; exit 1; }
     mv "$1.part" "$1"
@@ -40,6 +46,10 @@ if [ ! -f "$recognizer/model.int8.onnx" ] || [ ! -f "$recognizer/tokens.txt" ]; 
         python3 -c 'import sys, tarfile; tarfile.open(sys.argv[1]).extractall(sys.argv[2])' "$recognizer.tar.bz2" .unpack
     fi
     rm -rf "$recognizer" && mv ".unpack/$recognizer" . && rm -rf .unpack "$recognizer.tar.bz2"
+fi
+
+if [ ! -f "$whisper_tiny" ]; then
+    fetch "$whisper_tiny" "$whisper_tiny_sha256" "$whisper"
 fi
 
 echo "Модели: $models"

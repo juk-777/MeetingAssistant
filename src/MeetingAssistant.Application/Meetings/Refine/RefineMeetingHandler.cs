@@ -12,11 +12,9 @@ namespace MeetingAssistant.Application.Meetings.Refine;
 /// </remarks>
 internal sealed class RefineMeetingHandler(
     IRecordedMeetings recordedMeetings,
-    IRefineModel refineModel,
+    IRefineRecognizer refineRecognizer,
     IRefinedTranscripts refinedTranscripts,
-    ISpeechRecognizer speechRecognizer,
     IVoiceActivityDetectorFactory detectorFactory,
-    IRefineProgress progress,
     TimeProvider timeProvider) : ICommandHandler<RefineMeeting>
 {
     public async Task<Result> Handle(RefineMeeting command, CancellationToken cancellationToken)
@@ -28,7 +26,7 @@ internal sealed class RefineMeetingHandler(
             return opened;
         }
 
-        Result prepared = await refineModel.Prepare(cancellationToken);
+        Result prepared = await refineRecognizer.Prepare(cancellationToken);
 
         if (prepared.IsFailure)
         {
@@ -37,7 +35,7 @@ internal sealed class RefineMeetingHandler(
 
         RecordedMeeting meeting = opened.Value;
         await using IRefinedTranscriptDraft draft = await refinedTranscripts.Begin(command.Directory, cancellationToken);
-        var refinement = new Refinement(draft, meeting.Duration, speechRecognizer, progress, timeProvider);
+        var refinement = new Refinement(draft, meeting.Duration, refineRecognizer, command.Progress, timeProvider);
         var detectors = new Dictionary<Channel, IVoiceActivityDetector>();
 
         try
@@ -77,8 +75,8 @@ internal sealed class RefineMeetingHandler(
     private sealed class Refinement(
         IRefinedTranscriptDraft draft,
         TimeSpan duration,
-        ISpeechRecognizer speechRecognizer,
-        IRefineProgress progress,
+        IRefineRecognizer refineRecognizer,
+        IProgress<RefinePosition> progress,
         TimeProvider timeProvider)
     {
         private int _lastNumber;
@@ -88,7 +86,7 @@ internal sealed class RefineMeetingHandler(
             foreach (DetectedPhrase phrase in phrases)
             {
                 var span = new SpeechSpan(phrase.Start, SpeechAudio.Duration(phrase.Samples.Length));
-                string text = await speechRecognizer.Recognize(phrase.Samples, cancellationToken);
+                string text = await refineRecognizer.Recognize(phrase.Samples, cancellationToken);
 
                 if (!string.IsNullOrWhiteSpace(text))
                 {
@@ -98,7 +96,7 @@ internal sealed class RefineMeetingHandler(
                         cancellationToken);
                 }
 
-                progress.Recognized(span.Start + span.Duration, duration, _lastNumber);
+                progress.Report(new RefinePosition(span.Start + span.Duration, duration, _lastNumber));
             }
         }
     }

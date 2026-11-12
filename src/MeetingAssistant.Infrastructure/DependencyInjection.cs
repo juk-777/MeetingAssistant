@@ -1,10 +1,12 @@
 using MeetingAssistant.Application.Meetings;
 using MeetingAssistant.Application.Meetings.Recording;
+using MeetingAssistant.Application.Meetings.Refine;
 using MeetingAssistant.Infrastructure.Audio;
 using MeetingAssistant.Infrastructure.Speech;
 using MeetingAssistant.Infrastructure.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace MeetingAssistant.Infrastructure;
@@ -38,6 +40,16 @@ public static class DependencyInjection
         services.AddSingleton<IWakeEventWriter, EventsFile>();
 
         services.AddSingleton<ILiveCapture, LiveCapture>();
+
+        services.AddSingleton<IRecordedMeetings, RecordedMeetingFolder>();
+        services.AddSingleton<IRefinedTranscripts, RefinedTranscriptFiles>();
+        services.AddSingleton(provider => new WhisperModelFile(
+            provider.GetRequiredService<IOptions<SpeechOptions>>().Value.ModelsDirectory,
+            WhisperModelSource.Turbo,
+            // Модель — сотни мегабайт: умолчание HttpClient (100 с) оборвало бы загрузку.
+            new HttpClient { Timeout = Timeout.InfiniteTimeSpan },
+            provider.GetRequiredService<ILogger<WhisperModelFile>>()));
+        services.AddSingleton<IRefineRecognizer, WhisperRefineRecognizer>();
 
         return services;
     }
