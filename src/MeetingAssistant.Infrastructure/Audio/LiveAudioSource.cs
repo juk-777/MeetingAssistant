@@ -13,8 +13,9 @@ namespace MeetingAssistant.Infrastructure.Audio;
 /// <remarks>
 /// Потоки устройств только кладут пакеты в очередь: захват не ждёт ни перевода, ни детектора речи.
 /// Loopback не отдаёт пакетов, пока ничего не звучит; без тишины по часам таймкоды канала отставали бы
-/// от встречи, а фраза перед паузой не закрывалась бы до следующего звука. Сплошной поток пакетов тишиной
-/// не разбавляется: расхождение часов устройства с часами процесса не выравнивается.
+/// от встречи, а фраза перед паузой не закрывалась бы до следующего звука. Сплошной поток пакетов идёт подряд:
+/// расхождение часов устройства с часами процесса не выравнивается. На своё время устройства пакет ставится
+/// только на разрыве потока.
 /// </remarks>
 internal sealed class LiveAudioSource : IAudioSource
 {
@@ -24,9 +25,21 @@ internal sealed class LiveAudioSource : IAudioSource
     public static readonly TimeSpan CheckPeriod = TimeSpan.FromMilliseconds(100);
 
     /// <summary>
-    /// Сколько канал может быть без пакетов, прежде чем считается молчащим: больше пакета WASAPI и его разброса.
+    /// Насколько тишина по часам отстаёт от часов: пакет, задержанный доставкой меньше, ещё не перекрыт тишиной
+    /// и ложится на своё место.
     /// </summary>
-    public static readonly TimeSpan SilenceTolerance = TimeSpan.FromMilliseconds(200);
+    public static readonly TimeSpan DeliveryAllowance = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
+    /// Разброс отметок времени, в пределах которого пакет считается продолжением предыдущего.
+    /// </summary>
+    public static readonly TimeSpan StampTolerance = TimeSpan.FromMilliseconds(50);
+
+    /// <summary>
+    /// Насколько отметка устройства может отстоять от прихода пакета: дальше — сбой часов устройства без пометки,
+    /// и пакет ставится по приходу, а не срезается или отодвигается на годы.
+    /// </summary>
+    public static readonly TimeSpan StampLimit = TimeSpan.FromSeconds(2);
 
     private const int CheckEvent = -1;
 
@@ -145,56 +158,77 @@ internal sealed class LiveAudioSource : IAudioSource
     private readonly record struct CaptureEvent(int Device, DevicePacket? Packet, long Timestamp, Exception? Failure);
 
     /// <summary>
-    /// Звук канала на шкале встречи: сколько отдано и когда был последний пакет.
+    /// Звук канала на шкале встречи: сколько отдано и где по времени устройства кончился последний пакет.
     /// </summary>
     private sealed class Timeline(Channel channel, DeviceAudioConverter converter, long started, TimeProvider time)
     {
-        private readonly long _started = started;
         private long _emitted;
-        private long _lastPacket = started;
 
-        public IEnumerable<AudioChunk> Accept(DevicePacket packet, long at)
+        // Конец последнего пакета от начала встречи по времени устройства; нет — пакетов не было или после
+        // него канал закрыла тишина, и следующий пакет ставится на своё время.
+        private TimeSpan? _streamEnd;
+
+        public IEnumerable<AudioChunk> Accept(DevicePacket packet, long arrived)
         {
             float[] samples = converter.Convert(packet.Data.Span);
+            TimeSpan duration = converter.Duration(packet.Data.Span);
+            TimeSpan byArrival = Since(arrived) - duration;
+            TimeSpan start = packet.CapturedAt is { } capturedAt && (Since(capturedAt) - byArrival).Duration() <= StampLimit
+                ? Since(capturedAt)
+                : byArrival;
+            ReadOnlyMemory<float> sound = samples;
 
-            // Звук вернулся после молчания: тишина до начала пакета, чтобы пакет лёг на своё время.
-            if (Idle(at) && PadTo(at, samples.Length) is { } silence)
+            if (_streamEnd is not { } end || (start - end).Duration() > StampTolerance)
             {
-                yield return silence;
+                long shift = Samples(start) - _emitted;
+
+                if (shift > 0)
+                {
+                    yield return Silence(shift);
+                }
+                else if (shift < 0)
+                {
+                    // Тишина по часам уже закрыла начало пакета: он пришёл позже запаса на доставку.
+                    if (-shift >= sound.Length)
+                    {
+                        // Закрыт целиком: канал всё ещё впереди, следующий пакет тоже ставится на своё время.
+                        _streamEnd = null;
+                        yield break;
+                    }
+
+                    sound = sound[(int)-shift..];
+                }
             }
 
-            _lastPacket = at;
+            _streamEnd = start + duration;
 
-            if (samples.Length > 0)
+            if (sound.Length > 0)
             {
-                _emitted += samples.Length;
-                yield return new AudioChunk(channel, samples);
+                _emitted += sound.Length;
+                yield return new AudioChunk(channel, sound);
             }
         }
 
-        public IEnumerable<AudioChunk> Check(long at)
+        public IEnumerable<AudioChunk> Check(long now)
         {
-            if (Idle(at) && PadTo(at, 0) is { } silence)
+            TimeSpan horizon = Since(now) - DeliveryAllowance;
+            long missing = Samples(horizon) - _emitted;
+
+            if (missing > 0 && (_streamEnd ?? TimeSpan.Zero) < horizon)
             {
-                yield return silence;
+                _streamEnd = null;
+                yield return Silence(missing);
             }
         }
 
-        private bool Idle(long at) => time.GetElapsedTime(_lastPacket, at) > SilenceTolerance;
+        private static long Samples(TimeSpan sinceStart) => sinceStart.Ticks * SpeechAudio.SampleRate / TimeSpan.TicksPerSecond;
 
-        private AudioChunk? PadTo(long at, int reserved)
+        private TimeSpan Since(long timestamp) => time.GetElapsedTime(started, timestamp);
+
+        private AudioChunk Silence(long samples)
         {
-            TimeSpan sinceStart = time.GetElapsedTime(_started, at);
-            long clock = sinceStart.Ticks * SpeechAudio.SampleRate / TimeSpan.TicksPerSecond;
-            long missing = clock - reserved - _emitted;
-
-            if (missing <= 0)
-            {
-                return null;
-            }
-
-            _emitted += missing;
-            return new AudioChunk(channel, new float[missing]);
+            _emitted += samples;
+            return new AudioChunk(channel, new float[samples]);
         }
     }
 }

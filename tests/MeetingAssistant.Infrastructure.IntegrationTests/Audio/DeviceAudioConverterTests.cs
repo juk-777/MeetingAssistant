@@ -84,6 +84,16 @@ public sealed class DeviceAudioConverterTests
     }
 
     [Fact]
+    public void Duration_When48kStereoFloatPacket_CountsDeviceFramesNotResamplerOutput()
+    {
+        WaveFormat format = WaveFormat.CreateIeeeFloatWaveFormat(48_000, 2);
+        DeviceAudioConverter converter = DeviceAudioConverter.Create(format).Value;
+        byte[] packet = DevicePackets.Of(format, TimeSpan.FromMilliseconds(10), (_, _) => 0)[0];
+
+        converter.Duration(packet).ShouldBe(TimeSpan.FromMilliseconds(10));
+    }
+
+    [Fact]
     public void Create_WhenPcm24_FailsWithUnsupportedDeviceFormat()
     {
         Result<DeviceAudioConverter> converter = DeviceAudioConverter.Create(new WaveFormat(48_000, 24, 2));

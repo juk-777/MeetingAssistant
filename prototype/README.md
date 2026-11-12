@@ -22,6 +22,8 @@ uv venv -q -p 3.12 .venv && uv pip install -q -p .venv sherpa-onnx==2.0.1 numpy
 - `wnet/` — Whisper.net 1.9.1 по фразам из `seg/`: `dotnet run -c Release -- <seg/имя> <ggml-модель> <выход> <потоки> [prompt]`.
 - `terms-reading.txt` — текст для замера английских терминов (читается вслух, запись — в `samples/`),
   `terms-reading.terms.txt` — эталонный список терминов по порядку (`docs/measurements.md`, «Английские термины»).
+- `channel_offset.py <audio.wav> [окно, с] [шаг, с]` — смещение каналов встречи по взаимной корреляции, когда
+  микрофон слышит динамики (`docs/measurements.md`, «Смещение каналов»).
 
 ## Прогон в реальном темпе с сессией Claude Code
 

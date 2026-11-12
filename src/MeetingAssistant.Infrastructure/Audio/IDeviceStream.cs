@@ -35,7 +35,12 @@ internal interface IDeviceStream
 /// </summary>
 /// <remarks>
 /// Пакеты, помеченные устройством как тишина, <c>WasapiRecorder.CaptureAsync</c> не отдаёт: такой промежуток
-/// закрывает тишина по часам источника.
+/// источник видит разрывом по времени устройства и ставит перед следующим пакетом тишину.
 /// </remarks>
 /// <param name="Data">Кадры.</param>
-internal sealed record DevicePacket(ReadOnlyMemory<byte> Data);
+/// <param name="CapturedAt">
+/// Когда устройство записало первый кадр — отметка <see cref="TimeProvider.System"/>: WASAPI даёт счётчик
+/// производительности, это те же часы, поэтому часы встречи у живого захвата — только системные. Нет — устройство
+/// не знает, и пакет считается кончившимся в момент прихода.
+/// </param>
+internal sealed record DevicePacket(ReadOnlyMemory<byte> Data, long? CapturedAt);

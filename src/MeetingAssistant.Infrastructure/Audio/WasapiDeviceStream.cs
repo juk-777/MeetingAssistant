@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.Versioning;
 using MeetingAssistant.Application.Meetings.Recording;
@@ -46,7 +47,11 @@ internal sealed class WasapiDeviceStream : IDeviceStream
 
             while (await NextOrDeviceLost(buffers, cancellationToken))
             {
-                yield return new DevicePacket(buffers.Current.Data);
+                AudioBuffer buffer = buffers.Current;
+                long? capturedAt = buffer.Flags.HasFlag(AudioClientBufferFlags.TimestampError)
+                    ? null
+                    : DeviceClock.ToTimestamp(buffer.QPCPosition, Stopwatch.Frequency);
+                yield return new DevicePacket(buffer.Data, capturedAt);
             }
         }
         finally

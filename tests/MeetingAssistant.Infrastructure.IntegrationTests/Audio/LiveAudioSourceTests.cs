@@ -15,6 +15,8 @@ public sealed class LiveAudioSourceTests : IAsyncDisposable
 {
     private const float Voice = 0.5f;
 
+    private const float Marker = 0.25f;
+
     // Звук проходит без перевода, поэтому допуск — только на сравнение float, а не на обработку.
     private const float SampleTolerance = 1e-6f;
 
@@ -22,6 +24,8 @@ public sealed class LiveAudioSourceTests : IAsyncDisposable
     private static readonly WaveFormat SpeechFormat = WaveFormat.CreateIeeeFloatWaveFormat(SpeechAudio.SampleRate, 1);
 
     private static readonly int PacketSamples = Samples(LiveAudioSource.CheckPeriod);
+
+    private static readonly int AllowanceSamples = Samples(LiveAudioSource.DeliveryAllowance);
 
     // Предел ожидания: механизм, отдающий не тот звук, должен ронять тест, а не вешать прогон.
     private static readonly TimeSpan Limit = TimeSpan.FromSeconds(5);
@@ -37,7 +41,7 @@ public sealed class LiveAudioSourceTests : IAsyncDisposable
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Read_WhenChannelGetsNoPackets_GivesSilenceUpToClockAndLeavesStreamUntouched()
+    public async Task Read_WhenChannelGetsNoPackets_GivesSilenceUpToClockLessAllowanceAndLeavesStreamUntouched()
     {
         await Start();
 
@@ -46,21 +50,25 @@ public sealed class LiveAudioSourceTests : IAsyncDisposable
             await Step(_me);
         }
 
-        await Until(() => Received(Channel.Others).Length == Clock());
+        await Until(() => Received(Channel.Others).Length == Clock() - AllowanceSamples);
         Received(Channel.Others).ShouldAllBe(sample => sample == 0);
         Received(Channel.Me).ShouldAllBe(sample => Math.Abs(sample - Voice) < SampleTolerance);
     }
 
-    [Fact]
-    public async Task Read_WhenDeviceClockIsSlow_DoesNotInsertSilenceIntoContinuousStream()
+    [Theory]
+    [InlineData(1.1)]
+    [InlineData(0.9)]
+    public async Task Read_WhenDeviceClockDiffersFromProcessClock_KeepsContinuousStreamWhole(double periodScale)
     {
         await Start();
-        TimeSpan slowPeriod = LiveAudioSource.CheckPeriod * 1.1;
+        TimeSpan period = LiveAudioSource.CheckPeriod * periodScale;
 
-        for (int packet = 1; packet <= 30; packet++)
+        // Устройство пишет 100 мс звука за 110 (или 90) мс часов процесса: отметки пакетов расходятся с их длиной.
+        // За 60 пакетов канал расходится с часами на 600 мс — больше запаса на доставку.
+        for (int packet = 1; packet <= 60; packet++)
         {
-            _time.Advance(slowPeriod);
-            _me.Push(Packet(Voice));
+            _time.Advance(period);
+            _me.Push(Packet(Voice, Stamp(period)));
             int expected = packet * PacketSamples;
             await Until(() => Received(Channel.Me).Length == expected);
         }
@@ -78,35 +86,202 @@ public sealed class LiveAudioSourceTests : IAsyncDisposable
             for (int packet = 0; packet < 5; packet++)
             {
                 await Step(_others);
-                Received(Channel.Others).Length.ShouldBeInRange(Clock(), Clock() + PacketSamples);
+                Received(Channel.Others).Length.ShouldBe(Clock());
             }
 
-            for (int tick = 0; tick < 7; tick++)
-            {
-                _time.Advance(LiveAudioSource.CheckPeriod);
-            }
+            Advance(7);
 
-            await Until(() => Received(Channel.Others).Length == Clock());
+            await Until(() => Received(Channel.Others).Length == Clock() - AllowanceSamples);
         }
     }
 
     [Fact]
-    public async Task Read_WhenSoundReturnsBeforeCheckFillsSilence_EndsPacketExactlyOnClock()
+    public async Task Read_WhenSoundReturnsAfterPause_PutsPacketOnDeviceTimeNotArrival()
+    {
+        await Start();
+        Advance(7);
+        await Until(() => Received(Channel.Others).Length == Clock() - AllowanceSamples);
+
+        // Пакет записан с 600 до 700 мс, а дошёл на 750.
+        _time.Advance(LiveAudioSource.CheckPeriod / 2);
+        _others.Push(Packet(Voice, Stamp(LiveAudioSource.CheckPeriod * 1.5)));
+
+        int recorded = Samples(LiveAudioSource.CheckPeriod * 7);
+        await Until(() => Received(Channel.Others).Length >= recorded);
+        float[] others = Received(Channel.Others);
+        others.Length.ShouldBe(recorded);
+        others[..^PacketSamples].ShouldAllBe(sample => sample == 0);
+        others[^PacketSamples..].ShouldAllBe(sample => Math.Abs(sample - Voice) < SampleTolerance);
+    }
+
+    [Fact]
+    public async Task Read_WhenStreamBreaksShorterThanAllowance_PutsNextPacketOnDeviceTime()
     {
         await Start();
 
-        // Проверки на 100 и 200 мс канал ещё не считают молчащим; к 250 мс он молчит дольше допуска,
-        // а следующая проверка — только на 300 мс: тишину до пакета ставит сам вернувшийся пакет.
+        for (int packet = 0; packet < 5; packet++)
+        {
+            await Step(_me);
+        }
+
+        // 200 мс без пакетов (выпавшие пакеты тишины): тишина по часам сюда ещё не дошла.
+        Advance(2);
+        await Step(_me);
+
+        float[] me = Received(Channel.Me);
+        me.Length.ShouldBe(Clock());
+        me[(5 * PacketSamples)..(7 * PacketSamples)].ShouldAllBe(sample => sample == 0);
+        me[(7 * PacketSamples)..].ShouldAllBe(sample => Math.Abs(sample - Voice) < SampleTolerance);
+    }
+
+    [Fact]
+    public async Task Read_WhenPacketStartsBeforePreviousEnds_DropsWhatChannelAlreadyHas()
+    {
+        await Start();
+
+        for (int packet = 0; packet < 5; packet++)
+        {
+            await Step(_me);
+        }
+
+        // Отметка откатилась на 150 мс: пакет 350–450 мс, а канал уже дошёл до 500. Следом — штатный пакет
+        // с другим уровнем: по нему видно, что оба пакета разобраны (очередь устройства идёт по порядку).
+        _me.Push(Packet(Voice, Stamp(LiveAudioSource.CheckPeriod * 1.5)));
         _time.Advance(LiveAudioSource.CheckPeriod);
-        _time.Advance(LiveAudioSource.CheckPeriod);
+        _me.Push(Packet(Marker, Stamp(LiveAudioSource.CheckPeriod)));
+
+        await Until(() => Received(Channel.Me) is [.., var last] && Math.Abs(last - Marker) < SampleTolerance);
+        Received(Channel.Me).Length.ShouldBe(Clock());
+    }
+
+    [Fact]
+    public async Task Read_WhenRolledBackPacketIsContinued_KeepsOnlyWhatChannelLacks()
+    {
+        await Start();
+
+        for (int packet = 0; packet < 5; packet++)
+        {
+            await Step(_me);
+        }
+
+        // Канал дошёл до 500 мс. Отметка откатилась: 350–450 мс закрыт целиком, следом 450–550 — у канала нет
+        // только 500–550, и продолжение не должно сравниваться с концом срезанного пакета.
         _time.Advance(LiveAudioSource.CheckPeriod / 2);
-        _others.Push(Packet(Voice));
+        _me.Push(Packet(Voice, Stamp(LiveAudioSource.CheckPeriod * 2)));
+        _me.Push(Packet(Marker, Stamp(LiveAudioSource.CheckPeriod)));
+
+        await Until(() => Received(Channel.Me) is [.., var last] && Math.Abs(last - Marker) < SampleTolerance);
+        float[] me = Received(Channel.Me);
+        me.Length.ShouldBe(Clock());
+        me[(5 * PacketSamples)..].Length.ShouldBe(PacketSamples / 2);
+        me[(5 * PacketSamples)..].ShouldAllBe(sample => Math.Abs(sample - Marker) < SampleTolerance);
+    }
+
+    [Fact]
+    public async Task Read_WhenLatePacketIsPartlyCoveredBySilence_CutsOnlyCoveredPart()
+    {
+        await Start();
+
+        for (int packet = 0; packet < 5; packet++)
+        {
+            await Step(_me);
+        }
+
+        // Тишина по часам дошла до 800 мс, опоздавшие пакеты — 550–1350 мс: пакет 750–850 закрыт наполовину.
+        Advance(8);
+        int covered = Samples(LiveAudioSource.CheckPeriod * 8) - AllowanceSamples;
+        await Until(() => Received(Channel.Me).Length == 5 * PacketSamples + covered);
+        _time.Advance(LiveAudioSource.CheckPeriod / 2);
+        await Late(_me, 8);
+
+        float[] me = Received(Channel.Me);
+        me.Length.ShouldBe(Clock());
+        me.Count(sample => sample == 0).ShouldBe(covered);
+    }
+
+    [Fact]
+    public async Task Read_WhenDeviceStampIsFarFromArrival_PutsPacketsByArrival()
+    {
+        await Start();
+
+        // Часы устройства сбились без пометки: отметки на час назад. По ним каждый пакет срезался бы целиком.
+        for (int packet = 1; packet <= 20; packet++)
+        {
+            _time.Advance(LiveAudioSource.CheckPeriod);
+            _me.Push(Packet(Voice, Stamp(TimeSpan.FromHours(1))));
+            int expected = packet * PacketSamples;
+            await Until(() => Received(Channel.Me).Length == expected);
+        }
+
+        Received(Channel.Me).ShouldAllBe(sample => Math.Abs(sample - Voice) < SampleTolerance);
+    }
+
+    [Fact]
+    public async Task Read_WhenPacketHasNoDeviceTime_EndsItOnArrival()
+    {
+        await Start();
+        Advance(7);
+        _time.Advance(LiveAudioSource.CheckPeriod / 2);
+
+        _others.Push(Packet(Voice, capturedAt: null));
 
         await Until(() => Received(Channel.Others).Length >= Clock());
         float[] others = Received(Channel.Others);
         others.Length.ShouldBe(Clock());
         others[..^PacketSamples].ShouldAllBe(sample => sample == 0);
         others[^PacketSamples..].ShouldAllBe(sample => Math.Abs(sample - Voice) < SampleTolerance);
+    }
+
+    [Fact]
+    public async Task Read_WhenDeliveryDelayedLessThanAllowance_KeepsStreamWholeAndOnClock()
+    {
+        await Start();
+
+        for (int packet = 0; packet < 5; packet++)
+        {
+            await Step(_me);
+        }
+
+        // Поток захвата не получил CPU 300 мс: три пакета, записанные за это время, приходят разом после проверок.
+        Advance(3);
+        await Until(() => Received(Channel.Others).Length == Clock() - AllowanceSamples);
+        await Late(_me, 3);
+
+        for (int packet = 0; packet < 20; packet++)
+        {
+            await Step(_me);
+        }
+
+        float[] me = Received(Channel.Me);
+        me.Length.ShouldBe(Clock());
+        me.ShouldAllBe(sample => Math.Abs(sample - Voice) < SampleTolerance);
+    }
+
+    [Fact]
+    public async Task Read_WhenDeliveryDelayedMoreThanAllowance_StaysOnClockWithSilenceOnlyForExcess()
+    {
+        await Start();
+
+        for (int packet = 0; packet < 5; packet++)
+        {
+            await Step(_me);
+        }
+
+        // Задержка 800 мс при запасе 500: тишина по часам закрывает 300 мс, опоздавшие пакеты за них срезаются.
+        Advance(8);
+        int covered = Samples(LiveAudioSource.CheckPeriod * 8) - AllowanceSamples;
+        await Until(() => Received(Channel.Me).Length == 5 * PacketSamples + covered);
+        await Late(_me, 8);
+
+        for (int packet = 0; packet < 5; packet++)
+        {
+            await Step(_me);
+        }
+
+        float[] me = Received(Channel.Me);
+        me.Length.ShouldBe(Clock());
+        me.Count(sample => sample == 0).ShouldBe(covered);
+        me[(5 * PacketSamples)..(5 * PacketSamples + covered)].ShouldAllBe(sample => sample == 0);
     }
 
     [Fact]
@@ -164,13 +339,43 @@ public sealed class LiveAudioSourceTests : IAsyncDisposable
 
     private static int Samples(TimeSpan duration) => (int)(duration.Ticks * SpeechAudio.SampleRate / TimeSpan.TicksPerSecond);
 
-    private static DevicePacket Packet(float value)
+    private static DevicePacket Packet(float value, long? capturedAt)
     {
         float[] samples = [.. Enumerable.Repeat(value, PacketSamples)];
-        return new DevicePacket(MemoryMarshal.AsBytes(samples.AsSpan()).ToArray());
+        return new DevicePacket(MemoryMarshal.AsBytes(samples.AsSpan()).ToArray(), capturedAt);
     }
 
     private int Clock() => Samples(_time.GetUtcNow() - _time.Start);
+
+    /// <summary>
+    /// Отметка часов встречи, отстоящая от текущей на <paramref name="ago"/>.
+    /// </summary>
+    private long Stamp(TimeSpan ago) => _time.GetTimestamp() - (ago.Ticks * _time.TimestampFrequency / TimeSpan.TicksPerSecond);
+
+    /// <summary>
+    /// Проверки тишины без пакетов: часы вперёд на <paramref name="ticks"/> периодов проверки.
+    /// </summary>
+    private void Advance(int ticks)
+    {
+        for (int tick = 0; tick < ticks; tick++)
+        {
+            _time.Advance(LiveAudioSource.CheckPeriod);
+        }
+    }
+
+    /// <summary>
+    /// Пакеты, записанные устройством за последние <paramref name="count"/> периодов, приходят разом;
+    /// ожидание — пока канал не догонит часы, чтобы следующая проверка тишины не обогнала их в очереди.
+    /// </summary>
+    private async Task Late(FakeDevice device, int count)
+    {
+        for (int packet = count; packet >= 1; packet--)
+        {
+            device.Push(Packet(Voice, Stamp(LiveAudioSource.CheckPeriod * packet)));
+        }
+
+        await Until(() => Received(device.Channel).Length == Clock());
+    }
 
     private async Task Start()
     {
@@ -199,7 +404,7 @@ public sealed class LiveAudioSourceTests : IAsyncDisposable
     {
         _time.Advance(LiveAudioSource.CheckPeriod);
         int before = Received(device.Channel).Length;
-        device.Push(Packet(Voice));
+        device.Push(Packet(Voice, Stamp(LiveAudioSource.CheckPeriod)));
         await Until(() => Received(device.Channel).Length >= Math.Max(Clock(), before + PacketSamples));
     }
 

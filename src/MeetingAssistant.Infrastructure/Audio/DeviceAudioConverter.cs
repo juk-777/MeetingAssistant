@@ -88,6 +88,13 @@ internal sealed class DeviceAudioConverter
         return output[..produced];
     }
 
+    /// <summary>
+    /// Сколько звучит пакет на устройстве: по кадрам, а не по выходу ресемплера, который держит хвост у себя.
+    /// </summary>
+    /// <param name="packet">Целые кадры в формате устройства.</param>
+    public TimeSpan Duration(ReadOnlySpan<byte> packet) =>
+        TimeSpan.FromTicks(packet.Length / _format.BlockAlign * TimeSpan.TicksPerSecond / _format.SampleRate);
+
     private float[] Downmix(ReadOnlySpan<byte> packet)
     {
         int channels = _format.Channels;
