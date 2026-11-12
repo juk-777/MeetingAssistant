@@ -31,7 +31,12 @@ fi
 
 if [ ! -f "$recognizer/model.int8.onnx" ] || [ ! -f "$recognizer/tokens.txt" ]; then
     fetch "$recognizer.tar.bz2" "$recognizer_sha256"
-    tar -xjf "$recognizer.tar.bz2"
+    # bzip2 есть не везде (в WSL Ubuntu по умолчанию нет) — тогда распаковка модулем tarfile Python.
+    if command -v bzip2 > /dev/null; then
+        tar -xjf "$recognizer.tar.bz2"
+    else
+        python3 -c 'import sys, tarfile; tarfile.open(sys.argv[1]).extractall(".")' "$recognizer.tar.bz2"
+    fi
     rm "$recognizer.tar.bz2"
 fi
 
