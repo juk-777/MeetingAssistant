@@ -14,6 +14,10 @@
   <Folder Name="/Solution Items/.claude-plugin/">
     <File Path=".claude-plugin/marketplace.json" />
   </Folder>
+  <Folder Name="/Solution Items/.github/workflows/">
+    <File Path=".github/workflows/ci.yml" />
+    <File Path=".github/workflows/release.yml" />
+  </Folder>
   <Folder Name="/Solution Items/docs/">
     <File Path="docs/architecture.md" />
     <File Path="docs/decisions.md" />
@@ -70,10 +74,12 @@
     </Project>
   </Folder>
   <Folder Name="/Solution Items/scripts/">
+    <File Path="scripts/download-models.sh" />
     <File Path="scripts/inspect.sh" />
     <File Path="scripts/install-skill.sh" />
     <File Path="scripts/install.ps1" />
     <File Path="scripts/mutate.sh" />
+    <File Path="scripts/release-version.sh" />
     <File Path="scripts/slnx-folders.sh" />
     <File Path="scripts/test.sh" />
   </Folder>
