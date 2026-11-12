@@ -79,7 +79,9 @@ internal sealed class RefineMeetingHandler(
         IProgress<RefinePosition> progress,
         TimeProvider timeProvider)
     {
+        private readonly long _started = timeProvider.GetTimestamp();
         private int _lastNumber;
+        private TimeSpan _speech;
 
         public async Task Recognize(Channel channel, IReadOnlyList<DetectedPhrase> phrases, CancellationToken cancellationToken)
         {
@@ -96,7 +98,13 @@ internal sealed class RefineMeetingHandler(
                         cancellationToken);
                 }
 
-                progress.Report(new RefinePosition(span.Start + span.Duration, duration, _lastNumber));
+                _speech += span.Duration;
+                progress.Report(new RefinePosition(
+                    span.Start + span.Duration,
+                    duration,
+                    _lastNumber,
+                    _speech,
+                    timeProvider.GetElapsedTime(_started)));
             }
         }
     }

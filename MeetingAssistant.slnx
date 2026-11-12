@@ -57,6 +57,7 @@
     <File Path="plugins/meeting/skills/meeting/scripts/meeting-hint" />
     <File Path="plugins/meeting/skills/meeting/scripts/meeting-install" />
     <File Path="plugins/meeting/skills/meeting/scripts/meeting-notify" />
+    <File Path="plugins/meeting/skills/meeting/scripts/meeting-refine" />
     <File Path="plugins/meeting/skills/meeting/scripts/meeting-start" />
     <File Path="plugins/meeting/skills/meeting/scripts/meeting-watch" />
   </Folder>

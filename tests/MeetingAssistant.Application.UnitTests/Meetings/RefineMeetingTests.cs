@@ -191,18 +191,24 @@ public sealed class RefineMeetingTests : IDisposable
     }
 
     [Fact]
-    public async Task Handle_WhenPhraseRecognized_ReportsItsEndAndLinesWritten()
+    public async Task Handle_WhenPhraseRecognized_ReportsItsEndLinesSpeechAndRecognitionTime()
     {
         Recording(ScriptedSource.Seconds(Channel.Me, 2), ScriptedSource.Seconds(Channel.Me, 3));
+        string[] texts = [Text, string.Empty];
+        int call = 0;
         _harness.RefineRecognizer.Recognize(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<CancellationToken>())
-            .Returns(Text, string.Empty);
+            .Returns(_ =>
+            {
+                _harness.Time.Advance(Seconds(3));
+                return texts[call++];
+            });
 
         await Refine();
 
         Received.InOrder(() =>
         {
-            _progress.Report(new RefinePosition(Seconds(2), Duration, 1));
-            _progress.Report(new RefinePosition(Seconds(5), Duration, 1));
+            _progress.Report(new RefinePosition(Seconds(2), Duration, 1, Seconds(2), Seconds(3)));
+            _progress.Report(new RefinePosition(Seconds(5), Duration, 1, Seconds(5), Seconds(6)));
         });
     }
 

@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Уточнение встречи из сессии: meeting refine в отдельном окне Windows, затем каталог встречи — и сразу выход.
+#
+# Окно своё, а не фоновый процесс сессии: час встречи — около 50 минут работы, в окне виден ход, а сессия свободна.
+# После итога или отказа окно ждёт клавишу. Готовый transcript.whisper.md появляется только по окончании.
+#
+# Встреча без «конец записи» в events.log ещё пишется (или оборвалась аварийно) — отказ здесь, а не в окне: сессия
+# узнаёт его сразу. Ту же проверку делает и meeting refine.
+#
+# Код 3 — приложение записи не установлено (нет корня встреч или meeting.exe): скилл предлагает meeting-install.
+#
+# meeting-refine [каталог встречи]
+set -euo pipefail
+
+fail() {
+    printf '%s\n' "$1" >&2
+    exit 1
+}
+
+[ $# -le 1 ] || { echo "meeting-refine [каталог встречи]" >&2; exit 2; }
+
+here="$(cd "$(dirname "$0")" && pwd)"
+command -v powershell.exe > /dev/null || fail "Нет powershell.exe: уточнение запускается только под Windows (из WSL или Git Bash)."
+
+# Отказ meeting-dir (код 3 — не установлено) выходит отсюда с тем же кодом.
+dir=$(bash "$here/meeting-dir" "$@")
+grep -q $'\tконец записи$' "$dir/events.log" 2>/dev/null ||
+    fail "Запись встречи $dir не закончена: в events.log нет «конец записи». Остановите запись (Ctrl+C в окне meeting) и повторите."
+
+window_dir=$dir
+command -v wslpath > /dev/null && window_dir=$(wslpath -w "$dir")
+
+# Каталог — переменной окружения, а не в командной строке PowerShell: кавычки и кириллица не ломают команду.
+export MEETING_REFINE_DIR=$window_dir
+export WSLENV="${WSLENV:+$WSLENV:}MEETING_REFINE_DIR"
+
+powershell.exe -NoProfile -NonInteractive -Command '
+$ErrorActionPreference = "Stop"
+$env:Storage__MeetingsRoot = [Environment]::GetEnvironmentVariable("Storage__MeetingsRoot", "User")
+$env:Speech__ModelsDirectory = [Environment]::GetEnvironmentVariable("Speech__ModelsDirectory", "User")
+$meeting = Join-Path $env:LOCALAPPDATA "MeetingAssistant\app\meeting.exe"
+if (-not (Test-Path $meeting)) { [Console]::Error.WriteLine("Приложение записи не установлено: нет $meeting. Поставить — meeting-install."); exit 3 }
+$command = "`"$meeting`" refine `"$env:MEETING_REFINE_DIR`""
+# pause и после итога: окно не закрывается, пока человек не увидел, чем кончилось.
+Start-Process -FilePath cmd.exe -ArgumentList "/c `"$command & pause`"" -WorkingDirectory $env:USERPROFILE
+' && opened=0 || opened=$?
+[ "$opened" -ne 3 ] || exit 3
+[ "$opened" -eq 0 ] || fail "Окно уточнения не открылось."
+
+printf '%s\n' "$dir"

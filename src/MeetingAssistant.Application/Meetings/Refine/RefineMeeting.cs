@@ -15,4 +15,6 @@ public sealed record RefineMeeting(string Directory, IProgress<RefinePosition> P
 /// <param name="Position">До какого места записи распознано.</param>
 /// <param name="Duration">Длина записи.</param>
 /// <param name="Utterances">Сколько строк записано.</param>
-public sealed record RefinePosition(TimeSpan Position, TimeSpan Duration, int Utterances);
+/// <param name="Speech">Сколько речи распознано: сумма длин фраз.</param>
+/// <param name="Elapsed">Сколько идёт распознавание, без подготовки модели.</param>
+public sealed record RefinePosition(TimeSpan Position, TimeSpan Duration, int Utterances, TimeSpan Speech, TimeSpan Elapsed);

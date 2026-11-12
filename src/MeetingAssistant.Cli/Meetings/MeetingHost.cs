@@ -5,7 +5,9 @@ using MeetingAssistant.Application;
 using MeetingAssistant.Application.Abstractions.Messaging;
 using MeetingAssistant.Application.Meetings;
 using MeetingAssistant.Application.Meetings.Recording;
+using MeetingAssistant.Application.Meetings.Refine;
 using MeetingAssistant.Application.Meetings.Start;
+using MeetingAssistant.Cli.Refine;
 using MeetingAssistant.Infrastructure;
 using MeetingAssistant.SharedKernel;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,10 +19,13 @@ namespace MeetingAssistant.Cli.Meetings;
 /// <summary>
 /// Общий ход команд записи: настройки и модель, словарь, начало встречи, конвейер, итог.
 /// </summary>
-internal sealed class MeetingHost : IDisposable
+internal sealed class MeetingHost : IDisposable, IAsyncDisposable
 {
     public const string SettingsInvalidCode = "Settings.Invalid";
     public const string GlossaryNotFoundCode = "Glossary.NotFound";
+
+    private static readonly Error RefineCancelled =
+        new("Refine.Cancelled", "Уточнение прервано: черновик удалён, прежний transcript.whisper.md не тронут.");
 
     private const int Success = 0;
     private const int Failure = 1;
@@ -37,7 +42,8 @@ internal sealed class MeetingHost : IDisposable
     /// Собирает приложение, проверяет настройки и грузит модель — до начала встречи, чтобы отказ
     /// не оставлял пустого каталога.
     /// </summary>
-    public static Result<MeetingHost> Open()
+    /// <param name="loadsRecognizer">Грузить модель живого распознавания: уточнению она не нужна.</param>
+    public static Result<MeetingHost> Open(bool loadsRecognizer = true)
     {
         // Настройки — рядом с исполняемым файлом, а не в текущем каталоге: meeting запускают откуда угодно.
         HostApplicationBuilder builder = Host.CreateApplicationBuilder(
@@ -51,7 +57,11 @@ internal sealed class MeetingHost : IDisposable
         try
         {
             host.Services.GetRequiredService<IStartupValidator>().Validate();
-            host.Services.GetRequiredService<ISpeechRecognizer>();
+
+            if (loadsRecognizer)
+            {
+                host.Services.GetRequiredService<ISpeechRecognizer>();
+            }
         }
         catch (OptionsValidationException exception)
         {
@@ -107,25 +117,92 @@ internal sealed class MeetingHost : IDisposable
     /// <summary>
     /// Записывает встречу из источника до его конца, отмены или потери устройства и печатает итог.
     /// </summary>
-    public async Task<Result> Record(IAudioSource source, CancellationToken cancellationToken)
+    public Task<Result> Record(IAudioSource source, CancellationToken cancellationToken) =>
+        UntilWindowClosed(
+            async token =>
+            {
+                var elapsed = Stopwatch.StartNew();
+                Result recorded = await Services.GetRequiredService<IMeetingRecorder>().Record(source, token);
+                int utterances = Services.GetRequiredService<ICurrentMeeting>().Meeting?.LastUtteranceNumber ?? 0;
+
+                Console.WriteLine(Services.GetRequiredService<RecordingStatistics>().Summary(utterances, elapsed.Elapsed));
+
+                return recorded;
+            },
+            cancellationToken);
+
+    /// <summary>
+    /// Уточняет законченную встречу во второй транскрипт и печатает ход и итог. Отмена — отказ: прежний второй
+    /// транскрипт цел.
+    /// </summary>
+    public Task<Result> Refine(string directory, CancellationToken cancellationToken) =>
+        UntilWindowClosed(
+            async token =>
+            {
+                var progress = new ConsoleRefineProgress();
+
+                try
+                {
+                    Result refined = await Services.GetRequiredService<ICommandHandler<RefineMeeting>>()
+                        .Handle(new RefineMeeting(directory, progress), token);
+
+                    if (refined.IsSuccess)
+                    {
+                        Console.WriteLine(progress.Summary());
+                    }
+
+                    return refined;
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    return Result.Failure(RefineCancelled);
+                }
+            },
+            cancellationToken);
+
+    public void Dispose() => _host.Dispose();
+
+    /// <summary>
+    /// Освобождение для тех, у кого есть только асинхронное (распознаватель уточнения).
+    /// </summary>
+    public async ValueTask DisposeAsync()
     {
-        using var recording = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (_host is IAsyncDisposable host)
+        {
+            await host.DisposeAsync();
+        }
+        else
+        {
+            _host.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Работа до конца или отмены; закрытие окна консоли — та же отмена.
+    /// </summary>
+    /// <remarks>
+    /// Закрытие окна (на Windows SIGHUP — это CTRL_CLOSE_EVENT) Windows не даёт отменить: процесс снимается, как
+    /// только обработчик вернётся, и не позже чем через 5 с. Поэтому обработчик ждёт, пока работа дочистится
+    /// (очередь фраз, конец записи, WAV; брошенный черновик). Cancel — чтобы там, где завершение можно отменить
+    /// (SIGHUP в Linux), процесс вышел своим кодом, как после Ctrl+C.
+    /// </remarks>
+    private static async Task<Result> UntilWindowClosed(
+        Func<CancellationToken, Task<Result>> work,
+        CancellationToken cancellationToken)
+    {
+        using var working = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        // Закрытие окна консоли (на Windows SIGHUP — это CTRL_CLOSE_EVENT) останавливает запись, как Ctrl+C.
-        // Windows снимает процесс, как только обработчик вернётся, и не позже чем через 5 с, — поэтому обработчик
-        // ждёт, пока запись допишет очередь фраз, конец записи и WAV. Cancel — чтобы там, где завершение можно
-        // отменить (SIGHUP в Linux), процесс вышел своим кодом, как после Ctrl+C.
         using PosixSignalRegistration windowClosed = PosixSignalRegistration.Create(PosixSignal.SIGHUP, context =>
         {
             context.Cancel = true;
 
             try
             {
-                // Снятие регистрации не ждёт уже начавшегося обработчика: окно закрыли ровно тогда, когда запись
-                // кончилась сама, — recording может быть освобождён. Тогда отменять уже нечего.
+                // Снятие регистрации не ждёт уже начавшегося обработчика: окно закрыли ровно тогда, когда работа
+                // кончилась сама, — working может быть освобождён. Тогда отменять уже нечего.
                 // ReSharper disable once AccessToDisposedClosure
-                recording.Cancel();
+                working.Cancel();
             }
             catch (ObjectDisposedException)
             {
@@ -137,19 +214,11 @@ internal sealed class MeetingHost : IDisposable
 
         try
         {
-            var elapsed = Stopwatch.StartNew();
-            Result recorded = await Services.GetRequiredService<IMeetingRecorder>().Record(source, recording.Token);
-            int utterances = Services.GetRequiredService<ICurrentMeeting>().Meeting?.LastUtteranceNumber ?? 0;
-
-            Console.WriteLine(Services.GetRequiredService<RecordingStatistics>().Summary(utterances, elapsed.Elapsed));
-
-            return recorded;
+            return await work(working.Token);
         }
         finally
         {
             finished.TrySetResult();
         }
     }
-
-    public void Dispose() => _host.Dispose();
 }
