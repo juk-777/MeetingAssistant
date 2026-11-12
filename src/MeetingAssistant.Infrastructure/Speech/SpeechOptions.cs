@@ -28,11 +28,7 @@ internal static class SpeechModels
     public const string RecognizerTokensFile = "tokens.txt";
 
     public const string DownloadHint =
-        "Модели — docs/measurements.md, «Модели»: в каталоге моделей выполнить\n" +
-        "  base=https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models\n" +
-        $"  curl -sSLO $base/{RecognizerDirectory}.tar.bz2\n" +
-        $"  curl -sSLO $base/{VadFile}\n" +
-        "и распаковать архив там же (без bzip2 — способ из того же раздела).";
+        "Модели ставит установка приложения (install.ps1, README) — повторить её; в репозитории — ./scripts/download-models.sh.";
 
     public static string Vad(string modelsDirectory) => Path.Combine(Path.GetFullPath(modelsDirectory), VadFile);
 

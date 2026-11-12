@@ -37,7 +37,7 @@ ROOT_FILES = [
 ]
 
 # Каталоги, файлы которых раскладываются по папкам решения; вложенный каталог — своя папка.
-TREES = ["docs", "scripts", "skills", "prototype"]
+TREES = ["docs", "scripts", "plugins", ".claude-plugin", ".github", "tests/meeting-skill", "prototype"]
 
 tracked = subprocess.run(
     ["git", "ls-files", "--", *TREES, *ROOT_FILES],
@@ -57,7 +57,7 @@ def render():
     lines.extend(f'    <File Path="{path}" />' for path in ROOT_FILES if path in tracked)
     lines.append("  </Folder>")
 
-    in_trees = [path for path in tracked if path.split("/", 1)[0] in TREES]
+    in_trees = [path for path in tracked if any(path.startswith(tree + "/") for tree in TREES)]
     project_dirs = {posixpath.dirname(path) for path in in_trees if path.endswith(PROJECT_EXTENSION)}
 
     def owned_by_project(path):

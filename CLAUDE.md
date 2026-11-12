@@ -21,8 +21,11 @@
 - `docs/decisions.md` — принятые решения с причинами и отвергнутые варианты.
 - `docs/development.md` — порядок разработки: слайс, тесты, мутации, инспекция, конвенции кода.
 - `docs/specs/`, `docs/plans/` — спеки и планы слайсов, шаблоны `_template.md`.
-- `skills/meeting/` — скилл `/meeting` для Claude Code: правила сессии и скрипты; ставится ссылкой
-  `scripts/install-skill.sh`.
+- `plugins/meeting/` — плагин Claude Code со скиллом `/meeting` (правила сессии и скрипты); репозиторий —
+  маркетплейс (`.claude-plugin/marketplace.json`). В рабочей копии — ссылкой `scripts/install-skill.sh`.
+- `scripts/install.ps1` — установка приложения записи (из релиза или `-FromSource`), `scripts/install-wsl.sh` — сборка
+  в WSL и установка тем же скриптом; `.github/workflows/` — CI
+  и выпуск по тегу.
 - Задачи — GitHub Issues репозитория (`gh issue list`).
 - `prototype/` — Python-прототип на sherpa-onnx (замер моделей, прогон записи в реальном темпе) и стенд Whisper.net.
   Это опора для замеров, а не код продукта.
