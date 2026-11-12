@@ -5,11 +5,12 @@ sherpa-onnx), транскрипт в файл, подсказки рабоче�
 
 Две части:
 - **приложение записи `meeting`** — пишет микрофон («Я») и системный звук («Собеседники»), распознаёт речь
-  и дописывает транскрипт в каталог встречи. Пока только Windows: звук захватывается через WASAPI; Linux — #16;
+  и дописывает транскрипт в каталог встречи. Пока только Windows: звук захватывается через WASAPI; Linux —
+  [#16](https://github.com/juk-777/MeetingAssistant/issues/16);
 - **скилл `/meeting` для Claude Code** — сессия того проекта, о котором созвон, запускает запись, просыпается
   по событиям и подсказывает по коду и докам проекта; после встречи пишет протокол.
 
-Звук и транскрипт остаются на машине; наружу уходит только текст, который читает сессия Claude Code.
+Звук и транскрипт остаются на машине; наружу (в Anthropic) уходит только текст, который читает сессия Claude Code.
 
 ## Установка
 
@@ -31,8 +32,8 @@ powershell.exe -c 'iwr https://github.com/juk-777/MeetingAssistant/releases/late
 Скрипт берёт `meeting` из последнего релиза (со своим рантаймом .NET — ставить .NET не нужно) и модели
 из релиза sherpa-onnx, сверяет контрольные суммы и ставит всё в `%LOCALAPPDATA%\MeetingAssistant`. Задаёт
 переменные пользователя `Storage__MeetingsRoot` (корень встреч, по умолчанию `%USERPROFILE%\Meetings`; другой —
-`-MeetingsRoot <каталог>`) и `Speech__ModelsDirectory`, добавляет `meeting` в `PATH`. Конкретная версия —
-`-Version v0.1.0`.
+`-MeetingsRoot <каталог>`) и `Speech__ModelsDirectory`, добавляет `meeting` в `PATH` — виден в новом окне
+терминала. Конкретная версия — `-Version v0.1.0`; установленная — `meeting --version`.
 
 ### Скилл `/meeting`
 
@@ -44,7 +45,7 @@ powershell.exe -c 'iwr https://github.com/juk-777/MeetingAssistant/releases/late
 ```
 
 Приложение записи ещё не стоит — `/meeting start` предложит поставить его сам. Claude Code прямо в Windows, без WSL,
-со скиллом пока не проверялся (#15).
+со скиллом пока не проверялся ([#15](https://github.com/juk-777/MeetingAssistant/issues/15)).
 
 ### Из исходников
 
@@ -78,7 +79,8 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -FromSource
   устройства и что запись идёт; остановка — Ctrl+C или закрытие окна.
 - `/meeting` — подключиться к уже идущей встрече (запущенной `meeting start "<имя>"` в терминале Windows),
   `/meeting <каталог встречи>` — к конкретной.
-- Лучше в наушниках: без них микрофон слышит собеседников из динамиков, и их слова попадают в «Я».
+- Лучше в наушниках: без них микрофон слышит собеседников из динамиков, и их слова могут попадать в «Я»
+  (насколько — проверяется в [#13](https://github.com/juk-777/MeetingAssistant/issues/13)).
 
 ### Когда сессия отвечает
 
@@ -133,9 +135,10 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -FromSource
 и открытые вопросы с таймкодами; спорные места — с вариантами прочтения. Встреча ещё идёт — протокол помечен
 неполным.
 
-Отдельной переработки после встречи нет: транскрипт пишется вживую GigaAM, протокол — по нему. Whisper после
-встречи английские термины пишет точнее, но теряет их не реже, а стоит около 50 минут CPU на час встречи
-(`docs/decisions.md`, «Прохода turbo после встречи нет»). Звук хранится — встречу можно прогнать заново.
+По умолчанию переработки после встречи нет: транскрипт пишется вживую GigaAM, протокол — по нему. Whisper
+английские термины пишет точнее, но теряет их не реже, а стоит около 50 минут CPU на час встречи
+(`docs/decisions.md`, «Прохода turbo после встречи нет»). Второй транскрипт Whisper по команде для важных встреч,
+который протокол сверит с первым, — [#20](https://github.com/juk-777/MeetingAssistant/issues/20), в работе.
 
 Встреча — каталог `<корень встреч>\<дата>_<время>_<имя>`:
 - `audio.wav` — звук, левый канал «Я», правый «Собеседники»; `meeting replay audio.wav` прогоняет встречу заново;
@@ -144,17 +147,16 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -FromSource
 - `events.log` — поводы, по которым просыпалась сессия; `hints.md` — её подсказки и молчания;
 - `protocol.md` — протокол, если его просили.
 
-Звук и транскрипт остаются на машине; в Anthropic уходит только текст, который читает сессия Claude Code.
-
 Во время созвона тяжёлое (сборки, IDE) на той же машине лучше не запускать: распознавание идёт на CPU.
 По RDP — с перенаправлением звука (воспроизведение и запись на этом компьютере), иначе в сеансе нет устройств:
 `Audio.NoDevice`.
 
 ## Обновление и удаление
 
-- Приложение записи — та же команда установки (из исходников — `install-wsl.sh` или `install.ps1 -FromSource`): программа заменяется,
-  корень встреч и модели остаются. Во время встречи — отказ.
-- Скилл — в терминале `claude plugin marketplace update meeting-assistant && claude plugin update meeting@meeting-assistant`,
+- Приложение записи — та же команда установки (из исходников — `install-wsl.sh` или `install.ps1 -FromSource`):
+  программа заменяется, корень встреч и модели остаются. Во время встречи — отказ.
+- Скилл — в терминале
+  `claude plugin marketplace update meeting-assistant && claude plugin update meeting@meeting-assistant`,
   затем перезапуск сессии Claude Code.
 - Удаление: `/plugin uninstall meeting@meeting-assistant` (или ссылка `~/.claude/skills/meeting`), каталог
   `%LOCALAPPDATA%\MeetingAssistant`, переменные пользователя `Storage__MeetingsRoot` и `Speech__ModelsDirectory`,
