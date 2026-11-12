@@ -13,6 +13,6 @@ public static class StorageErrors
         new(
             MeetingsRootNotAbsoluteCode,
             $"Корень встреч «{root}» — не абсолютный путь: встреча легла бы туда, где её не найдёт скилл /meeting. " +
-            $"Задайте его переменной окружения пользователя {StorageOptions.Section}__{nameof(StorageOptions.MeetingsRoot)}, " +
-            "тот же путь — скиллу (MEETINGS_ROOT).");
+            $"Задайте его переменной окружения пользователя {StorageOptions.Section}__{nameof(StorageOptions.MeetingsRoot)} " +
+            "(её задаёт scripts/install.ps1, скилл читает её же).");
 }

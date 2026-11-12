@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using MeetingAssistant.Application;
 using MeetingAssistant.Application.Abstractions.Messaging;
 using MeetingAssistant.Application.Meetings;
@@ -23,6 +24,8 @@ internal sealed class MeetingHost : IDisposable
 
     private const int Success = 0;
     private const int Failure = 1;
+
+    private static readonly TimeSpan WindowCloseGrace = TimeSpan.FromSeconds(5);
 
     private readonly IHost _host;
 
@@ -106,13 +109,46 @@ internal sealed class MeetingHost : IDisposable
     /// </summary>
     public async Task<Result> Record(IAudioSource source, CancellationToken cancellationToken)
     {
-        var elapsed = Stopwatch.StartNew();
-        Result recorded = await Services.GetRequiredService<IMeetingRecorder>().Record(source, cancellationToken);
-        int utterances = Services.GetRequiredService<ICurrentMeeting>().Meeting?.LastUtteranceNumber ?? 0;
+        using var recording = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        Console.WriteLine(Services.GetRequiredService<RecordingStatistics>().Summary(utterances, elapsed.Elapsed));
+        // Закрытие окна консоли (на Windows SIGHUP — это CTRL_CLOSE_EVENT) останавливает запись, как Ctrl+C.
+        // Windows снимает процесс, как только обработчик вернётся, и не позже чем через 5 с, — поэтому обработчик
+        // ждёт, пока запись допишет очередь фраз, конец записи и WAV. Cancel — чтобы там, где завершение можно
+        // отменить (SIGHUP в Linux), процесс вышел своим кодом, как после Ctrl+C.
+        using PosixSignalRegistration windowClosed = PosixSignalRegistration.Create(PosixSignal.SIGHUP, context =>
+        {
+            context.Cancel = true;
 
-        return recorded;
+            try
+            {
+                // Снятие регистрации не ждёт уже начавшегося обработчика: окно закрыли ровно тогда, когда запись
+                // кончилась сама, — recording может быть освобождён. Тогда отменять уже нечего.
+                // ReSharper disable once AccessToDisposedClosure
+                recording.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+
+            finished.Task.Wait(WindowCloseGrace);
+        });
+
+        try
+        {
+            var elapsed = Stopwatch.StartNew();
+            Result recorded = await Services.GetRequiredService<IMeetingRecorder>().Record(source, recording.Token);
+            int utterances = Services.GetRequiredService<ICurrentMeeting>().Meeting?.LastUtteranceNumber ?? 0;
+
+            Console.WriteLine(Services.GetRequiredService<RecordingStatistics>().Summary(utterances, elapsed.Elapsed));
+
+            return recorded;
+        }
+        finally
+        {
+            finished.TrySetResult();
+        }
     }
 
     public void Dispose() => _host.Dispose();

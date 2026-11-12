@@ -284,13 +284,53 @@ dir_WhenArgumentGiven_TranslatesWindowsPathWithoutCurrent() {
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
 }
 
-dir_WhenRootNotSet_FailsNamingVariable() {
+# Заглушка powershell.exe для корня встреч из Windows: без аргумента переменной нет (пустой вывод), с аргументом —
+# её значение, с переводом строки Windows, как его печатает PowerShell.
+stub_reg() {
+    mkdir -p "$work/stub-reg"
+    printf '%s\r\n' "${1:-}" > "$work/reg.out"
+    printf '#!/usr/bin/env bash\ncat "%s/reg.out"\n' "$work" > "$work/stub-reg/powershell.exe"
+    chmod +x "$work/stub-reg/powershell.exe"
+}
+
+dir_WhenRootNotSet_FailsNamingBothSources() {
+    stub_reg
     local message
-    if message=$(MEETINGS_ROOT="" "$bin/meeting-dir" 2>&1); then
+    if message=$(PATH="$work/stub-reg:$PATH" MEETINGS_ROOT="" "$bin/meeting-dir" 2>&1); then
         echo "отказа нет"
         return 1
     fi
-    [[ $message == *MEETINGS_ROOT* ]] || { echo "$message"; return 1; }
+    [[ $message == *MEETINGS_ROOT* && $message == *Storage__MeetingsRoot* && $message == *install.ps1* ]] ||
+        { echo "$message"; return 1; }
+}
+
+dir_WhenRootOnlyInWindows_TakesItFromRegistry() {
+    new_meeting
+    stub_reg 'D:\Мои встречи'
+    rm -f "$work/wslpath.calls"
+    mkdir -p "$work/stub" "$work/registry-root"
+    printf '#!/usr/bin/env bash\necho "$*" >> "%s/wslpath.calls"\necho "%s/registry-root"\n' "$work" "$work" > "$work/stub/wslpath"
+    chmod +x "$work/stub/wslpath"
+    jq -n --arg d "$meeting" '{ directory: $d }' > "$work/registry-root/current.json"
+
+    local got
+    got=$(PATH="$work/stub-reg:$work/stub:$PATH" MEETINGS_ROOT="" "$bin/meeting-dir") || return 1
+
+    [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
+    grep -qxF -- '-u D:\Мои встречи' "$work/wslpath.calls" || { cat "$work/wslpath.calls"; return 1; }
+}
+
+dir_WhenMeetingsRootSet_PrefersItOverRegistry() {
+    new_meeting
+    stub_reg "$work/registry-only"
+    mkdir -p "$work/registry-only" "$work/own-root"
+    echo '{ "directory": "/nonexistent" }' > "$work/registry-only/current.json"
+    jq -n --arg d "$meeting" '{ directory: $d }' > "$work/own-root/current.json"
+
+    local got
+    got=$(PATH="$work/stub-reg:$PATH" MEETINGS_ROOT="$work/own-root" "$bin/meeting-dir") || return 1
+
+    [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
 }
 
 dir_WhenRootIsWindowsPath_TranslatesIt() {
@@ -322,6 +362,77 @@ dir_WhenNoCurrent_Fails() {
         echo "отказа нет"
         return 1
     fi
+}
+
+# Заглушка powershell.exe для meeting-start: пишет переданные имя, словарь и корень в start.args; если подготовлен
+# start.next — через секунду кладёт его в current.json корня, как встреча, начавшаяся после загрузки модели.
+stub_start() {
+    rm -rf "$work/stub-start" "$work/start.args" "$work/start.next"
+    mkdir -p "$work/stub-start" "$work/start-root"
+    cat > "$work/stub-start/powershell.exe" <<EOF
+#!/usr/bin/env bash
+printf '%s\n%s\n%s\n' "\$MEETING_START_NAME" "\$MEETING_START_GLOSSARY" "\$MEETING_START_ROOT" > "$work/start.args"
+[ ! -f "$work/start.next" ] || ( sleep 1; cp "$work/start.next" "$work/start-root/current.json" ) > /dev/null 2>&1 &
+EOF
+    chmod +x "$work/stub-start/powershell.exe"
+    echo '{ "id": "previous", "directory": "'"$work"'" }' > "$work/start-root/current.json"
+}
+
+start_WhenNewMeetingAppears_PrintsItsDirectoryAndPassesName() {
+    new_meeting
+    stub_start
+    jq -n --arg d "$meeting" '{ id: "new", directory: $d }' > "$work/start.next"
+
+    local got
+    got=$(PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=5 \
+        timeout 15 "$bin/meeting-start" 'Встреча с партнёром') || return 1
+
+    [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
+    [ "$(head -1 "$work/start.args")" = 'Встреча с партнёром' ] || { cat "$work/start.args"; return 1; }
+
+    # Окну передан тот корень, где ждали встречу, — в виде, понятном Windows.
+    local root="$work/start-root"
+    ! command -v wslpath > /dev/null || root=$(wslpath -w "$root")
+    [ "$(sed -n 3p "$work/start.args")" = "$root" ] || { cat "$work/start.args"; return 1; }
+}
+
+start_WhenNoNewMeeting_FailsInsteadOfTakingPrevious() {
+    stub_start
+
+    local got
+    if got=$(PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=2 \
+        timeout 15 "$bin/meeting-start" 'x' 2> "$work/start.err"); then
+        echo "отказа нет, получено: $got"
+        return 1
+    fi
+    [ -z "$got" ] || { echo "напечатана прошлая встреча: $got"; return 1; }
+    grep -q 'окне meeting' "$work/start.err" || { cat "$work/start.err"; return 1; }
+}
+
+start_WhenGlossaryGiven_PassesItAsWindowsPath() {
+    new_meeting
+    stub_start
+    jq -n --arg d "$meeting" '{ id: "new", directory: $d }' > "$work/start.next"
+    printf '#!/usr/bin/env bash\necho "D:\\\\glossary.txt"\n' > "$work/stub-start/wslpath"
+    chmod +x "$work/stub-start/wslpath"
+    touch "$work/glossary.txt"
+
+    PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=5 \
+        timeout 15 "$bin/meeting-start" 'x' "$work/glossary.txt" > /dev/null || return 1
+
+    [ "$(sed -n 2p "$work/start.args")" = 'D:\glossary.txt' ] || { cat "$work/start.args"; return 1; }
+}
+
+start_WhenNameBreaksWindowsCommandLine_RefusesWithoutStarting() {
+    stub_start
+    local name
+    for name in 'a"b' 'a%PATH%b' 'a\'; do
+        if PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" "$bin/meeting-start" "$name" 2> /dev/null; then
+            echo "отказа нет: $name"
+            return 1
+        fi
+        [ ! -f "$work/start.args" ] || { echo "запуск был: $name"; return 1; }
+    done
 }
 
 # expect_hint <ожидаемый текст>: в hints.md ровно одна строка, поля события сохранены, время записи — epoch.

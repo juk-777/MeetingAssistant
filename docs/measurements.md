@@ -149,6 +149,13 @@ ffmpeg -i <запись> -ac 1 -ar 16000 -sample_fmt s16 samples/call1.wav
 - `tail -F` в WSL на inotify строк, дописанных Windows-процессом в каталог на диске Windows (drvfs), не видит (uutils 0.8
   и GNU), с опросом видит. Подсказки `/meeting` шли по ходу встречи: `meeting-watch` опрашивает файл.
 
+## Установка `meeting` (`scripts/install.ps1`)
+
+Нативная Windows, та же машина, SDK 10 в профиле пользователя, запуск из WSL через `powershell.exe`:
+- каталог `app` (self-contained `win-x64`, Release) — 102 МБ, рядом модели — 216 МБ;
+- первая установка — 11 с (сборка уже была в кеше NuGet и MSBuild);
+- `meeting replay` фрагмента 180 с из `C:\` с переменными из реестра — 23 строки, как у запуска из репозитория.
+
 ## Сторонние замеры на той же машине
 
 Другой проект на той же машине и WSL; sherpa-onnx 1.13.7 нативным CLI, по файлу за вызов; Whisper.net.

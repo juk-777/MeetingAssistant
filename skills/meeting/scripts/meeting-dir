@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# Каталог встречи для скилла /meeting: из аргумента или из current.json в корне встреч ($MEETINGS_ROOT).
+# Каталог встречи для скилла /meeting: из аргумента или из current.json в корне встреч.
+#
+# Корень встреч — $MEETINGS_ROOT, иначе переменная пользователя Windows Storage__MeetingsRoot, которую задаёт
+# установка (scripts/install.ps1) и читает сама запись. Она читается из реестра, а не из окружения: окружение WSL
+# и уже открытых окон не видит переменную, заданную после их запуска.
+# Корень встреч, по которому ждёт meeting-start, тот передаёт и окну записи: источник у них один — этот скрипт.
 #
 # Путь печатается так, как его видит эта оболочка: путь Windows (D:\…), который пишет процесс записи под Windows,
 # в WSL переводится через wslpath. Отказ — код 1 и текст на stderr: что задать или запустить.
 #
 # meeting-dir [каталог встречи]
+# meeting-dir --root — сам корень встреч, локальным путём (его ждёт meeting-start)
 set -euo pipefail
 
 fail() {
@@ -20,12 +26,33 @@ to_local() {
     fi
 }
 
+# Значение Storage__MeetingsRoot пользователя Windows (из реестра, %…% раскрыты); нет powershell.exe или значения —
+# пусто. Через PowerShell с выводом в UTF-8, а не reg.exe: тот пишет в кодовой странице консоли (кириллица
+# в пути не доходит), а под Git Bash его ключ /v превращается в путь.
+windows_root() {
+    command -v powershell.exe >/dev/null || return 0
+    { powershell.exe -NoProfile -NonInteractive -Command '
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+[Environment]::GetEnvironmentVariable("Storage__MeetingsRoot", "User")' 2>/dev/null || true; } | tr -d '\r'
+}
+
+meetings_root() {
+    local root=${MEETINGS_ROOT:-}
+    [ -n "$root" ] || root=$(windows_root)
+    [ -n "$root" ] ||
+        fail "Не найден корень встреч: нет ни MEETINGS_ROOT, ни переменной пользователя Windows Storage__MeetingsRoot. Установить приложение (scripts/install.ps1 задаёт её) или передать каталог встречи: /meeting <каталог>."
+    to_local "$root"
+}
+
+if [ "${1:-}" = "--root" ]; then
+    meetings_root
+    exit 0
+fi
+
 if [ $# -gt 0 ]; then
     dir=$(to_local "$1")
 else
-    [ -n "${MEETINGS_ROOT:-}" ] ||
-        fail "Не задан MEETINGS_ROOT — корень встреч, тот же, что Storage:MeetingsRoot приложения. Задать в env ~/.claude/settings.json или передать каталог встречи: /meeting <каталог>."
-    current="$(to_local "$MEETINGS_ROOT")/current.json"
+    current="$(meetings_root)/current.json"
     [ -f "$current" ] ||
         fail "Нет $current: встреча ещё не начиналась. Запустить запись (meeting start или meeting replay) и повторить."
     command -v jq >/dev/null || fail "Нужен jq: он читает $current."

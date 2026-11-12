@@ -31,4 +31,4 @@ fi
 
 ln -s "$source_dir" "$target"
 echo "Поставлен: $target → $source_dir"
-echo "Корень встреч для скилла — MEETINGS_ROOT в env ~/.claude/settings.json, тот же, что Storage:MeetingsRoot приложения."
+echo "Корень встреч скилл берёт у Windows (переменная Storage__MeetingsRoot, её задаёт scripts/install.ps1); MEETINGS_ROOT в env ~/.claude/settings.json — только чтобы задать другой."

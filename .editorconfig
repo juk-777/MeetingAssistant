@@ -14,6 +14,10 @@ indent_size = 2
 [*.md]
 trim_trailing_whitespace = false
 
+# Windows PowerShell 5.1 читает скрипт без BOM в кодовой странице ANSI — кириллица ломается.
+[*.ps1]
+charset = utf-8-bom
+
 [*.cs]
 csharp_style_namespace_declarations = file_scoped:error
 csharp_style_var_when_type_is_apparent = true:suggestion
