@@ -31,6 +31,7 @@ ROOT_FILES = [
     "global.json",
     ".editorconfig",
     ".gitignore",
+    ".gitattributes",
     "Directory.Build.props",
     "Directory.Packages.props",
 ]

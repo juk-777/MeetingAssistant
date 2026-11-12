@@ -1,0 +1,3 @@
+# Скрипты bash — LF при любом core.autocrlf: с CRLF они не запускаются (`env: 'bash\r'`).
+*.sh text eol=lf
+skills/meeting/scripts/* text eol=lf

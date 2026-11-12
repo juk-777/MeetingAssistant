@@ -7,6 +7,7 @@
     <File Path="global.json" />
     <File Path=".editorconfig" />
     <File Path=".gitignore" />
+    <File Path=".gitattributes" />
     <File Path="Directory.Build.props" />
     <File Path="Directory.Packages.props" />
   </Folder>
