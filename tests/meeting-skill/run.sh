@@ -4,9 +4,14 @@
 # Запускается из scripts/test.sh вместе с тестовыми приложениями .NET; итог — строка «итого: N, упало: M».
 set -uo pipefail
 
-bin="$(cd "$(dirname "$0")/../scripts" && pwd)"
 work=$(mktemp -d)
 export XDG_STATE_HOME="$work/state"
+
+# Скрипты — копией без бита исполнения: так их получает плагин, установленный в кеш Claude Code, и скилл зовёт их
+# через bash. Скрипт, который зовёт соседа напрямую, здесь падает.
+bin="$work/scripts"
+cp -r "$(dirname "$0")/../../plugins/meeting/skills/meeting/scripts" "$bin"
+chmod -x "$bin"/*
 
 # Предел ожидания вывода: скрипт, который не отдал блок, роняет тест, а не вешает прогон.
 LIMIT_SECONDS=5
@@ -66,7 +71,7 @@ event_header() {
 # start_watch <проект> <файл вывода>: meeting-watch в фоне из каталога проекта, как его запускает Monitor.
 start_watch() {
     mkdir -p "$1"
-    (cd "$1" && exec "$bin/meeting-watch" "$meeting") > "$2" 2>&1 &
+    (cd "$1" && exec bash "$bin/meeting-watch" "$meeting") > "$2" 2>&1 &
     watch_pid=$!
     watchers+=("$watch_pid")
 }
@@ -257,7 +262,7 @@ dir_WhenCurrentHasWindowsPath_TranslatesIt() {
     printf '{ "directory": "D:\\\\meetings\\\\2026-11-10_10-00-00_x" }\n' > "$work/root/current.json"
 
     local got
-    got=$(PATH="$work/stub:$PATH" MEETINGS_ROOT="$work/root" "$bin/meeting-dir") || return 1
+    got=$(PATH="$work/stub:$PATH" MEETINGS_ROOT="$work/root" bash "$bin/meeting-dir") || return 1
 
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
     grep -qxF -- '-u D:\meetings\2026-11-10_10-00-00_x' "$work/wslpath.calls" || { cat "$work/wslpath.calls"; return 1; }
@@ -269,7 +274,7 @@ dir_WhenCurrentHasPosixPath_TakesItAsIs() {
     jq -n --arg d "$meeting" '{ directory: $d }' > "$work/posix-root/current.json"
 
     local got
-    got=$(MEETINGS_ROOT="$work/posix-root" "$bin/meeting-dir") || return 1
+    got=$(MEETINGS_ROOT="$work/posix-root" bash "$bin/meeting-dir") || return 1
 
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
 }
@@ -279,7 +284,7 @@ dir_WhenArgumentGiven_TranslatesWindowsPathWithoutCurrent() {
     stub_wslpath
 
     local got
-    got=$(PATH="$work/stub:$PATH" MEETINGS_ROOT="" "$bin/meeting-dir" 'D:\meetings\x') || return 1
+    got=$(PATH="$work/stub:$PATH" MEETINGS_ROOT="" bash "$bin/meeting-dir" 'D:\meetings\x') || return 1
 
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
 }
@@ -296,7 +301,7 @@ stub_reg() {
 dir_WhenRootNotSet_FailsNamingBothSources() {
     stub_reg
     local message
-    if message=$(PATH="$work/stub-reg:$PATH" MEETINGS_ROOT="" "$bin/meeting-dir" 2>&1); then
+    if message=$(PATH="$work/stub-reg:$PATH" MEETINGS_ROOT="" bash "$bin/meeting-dir" 2>&1); then
         echo "отказа нет"
         return 1
     fi
@@ -314,7 +319,7 @@ dir_WhenRootOnlyInWindows_TakesItFromRegistry() {
     jq -n --arg d "$meeting" '{ directory: $d }' > "$work/registry-root/current.json"
 
     local got
-    got=$(PATH="$work/stub-reg:$work/stub:$PATH" MEETINGS_ROOT="" "$bin/meeting-dir") || return 1
+    got=$(PATH="$work/stub-reg:$work/stub:$PATH" MEETINGS_ROOT="" bash "$bin/meeting-dir") || return 1
 
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
     grep -qxF -- '-u D:\Мои встречи' "$work/wslpath.calls" || { cat "$work/wslpath.calls"; return 1; }
@@ -328,7 +333,7 @@ dir_WhenMeetingsRootSet_PrefersItOverRegistry() {
     jq -n --arg d "$meeting" '{ directory: $d }' > "$work/own-root/current.json"
 
     local got
-    got=$(PATH="$work/stub-reg:$PATH" MEETINGS_ROOT="$work/own-root" "$bin/meeting-dir") || return 1
+    got=$(PATH="$work/stub-reg:$PATH" MEETINGS_ROOT="$work/own-root" bash "$bin/meeting-dir") || return 1
 
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
 }
@@ -342,7 +347,7 @@ dir_WhenRootIsWindowsPath_TranslatesIt() {
     jq -n --arg d "$meeting" '{ directory: $d }' > "$work/win-root/current.json"
 
     local got
-    got=$(PATH="$work/stub:$PATH" MEETINGS_ROOT='D:\meetings' "$bin/meeting-dir") || return 1
+    got=$(PATH="$work/stub:$PATH" MEETINGS_ROOT='D:\meetings' bash "$bin/meeting-dir") || return 1
 
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
 }
@@ -350,7 +355,7 @@ dir_WhenRootIsWindowsPath_TranslatesIt() {
 dir_WhenCurrentHasNoDirectory_Fails() {
     mkdir -p "$work/broken-root"
     echo '{}' > "$work/broken-root/current.json"
-    if MEETINGS_ROOT="$work/broken-root" "$bin/meeting-dir" > /dev/null 2>&1; then
+    if MEETINGS_ROOT="$work/broken-root" bash "$bin/meeting-dir" > /dev/null 2>&1; then
         echo "отказа нет"
         return 1
     fi
@@ -358,7 +363,7 @@ dir_WhenCurrentHasNoDirectory_Fails() {
 
 dir_WhenNoCurrent_Fails() {
     mkdir -p "$work/empty-root"
-    if MEETINGS_ROOT="$work/empty-root" "$bin/meeting-dir" > /dev/null 2>&1; then
+    if MEETINGS_ROOT="$work/empty-root" bash "$bin/meeting-dir" > /dev/null 2>&1; then
         echo "отказа нет"
         return 1
     fi
@@ -385,7 +390,7 @@ start_WhenNewMeetingAppears_PrintsItsDirectoryAndPassesName() {
 
     local got
     got=$(PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=5 \
-        timeout 15 "$bin/meeting-start" 'Встреча с партнёром') || return 1
+        timeout 15 bash "$bin/meeting-start" 'Встреча с партнёром') || return 1
 
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
     [ "$(head -1 "$work/start.args")" = 'Встреча с партнёром' ] || { cat "$work/start.args"; return 1; }
@@ -401,7 +406,7 @@ start_WhenNoNewMeeting_FailsInsteadOfTakingPrevious() {
 
     local got
     if got=$(PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=2 \
-        timeout 15 "$bin/meeting-start" 'x' 2> "$work/start.err"); then
+        timeout 15 bash "$bin/meeting-start" 'x' 2> "$work/start.err"); then
         echo "отказа нет, получено: $got"
         return 1
     fi
@@ -418,7 +423,7 @@ start_WhenGlossaryGiven_PassesItAsWindowsPath() {
     touch "$work/glossary.txt"
 
     PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=5 \
-        timeout 15 "$bin/meeting-start" 'x' "$work/glossary.txt" > /dev/null || return 1
+        timeout 15 bash "$bin/meeting-start" 'x' "$work/glossary.txt" > /dev/null || return 1
 
     [ "$(sed -n 2p "$work/start.args")" = 'D:\glossary.txt' ] || { cat "$work/start.args"; return 1; }
 }
@@ -427,7 +432,7 @@ start_WhenNameBreaksWindowsCommandLine_RefusesWithoutStarting() {
     stub_start
     local name
     for name in 'a"b' 'a%PATH%b' 'a\'; do
-        if PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" "$bin/meeting-start" "$name" 2> /dev/null; then
+        if PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" bash "$bin/meeting-start" "$name" 2> /dev/null; then
             echo "отказа нет: $name"
             return 1
         fi
@@ -449,7 +454,7 @@ expect_hint() {
 hint_WhenMultiline_WritesOneRowJoinedWithSlash() {
     new_meeting
 
-    "$bin/meeting-hint" "$meeting" 1762774262.007 7 $'Суть подсказки\n\nИсточник: docs/x.md:12\n' || return 1
+    bash "$bin/meeting-hint" "$meeting" 1762774262.007 7 $'Суть подсказки\n\nИсточник: docs/x.md:12\n' || return 1
 
     expect_hint "Суть подсказки / Источник: docs/x.md:12"
 }
@@ -457,7 +462,7 @@ hint_WhenMultiline_WritesOneRowJoinedWithSlash() {
 hint_WhenTabsInText_ReplacesThemWithSpace() {
     new_meeting
 
-    "$bin/meeting-hint" "$meeting" 1762774262.007 7 $'колонка\tвторая' || return 1
+    bash "$bin/meeting-hint" "$meeting" 1762774262.007 7 $'колонка\tвторая' || return 1
 
     expect_hint "колонка вторая"
 }
@@ -465,7 +470,7 @@ hint_WhenTabsInText_ReplacesThemWithSpace() {
 hint_WhenCarriageReturns_DropsThem() {
     new_meeting
 
-    "$bin/meeting-hint" "$meeting" 1762774262.007 7 $'первая\r\nвторая\r' || return 1
+    bash "$bin/meeting-hint" "$meeting" 1762774262.007 7 $'первая\r\nвторая\r' || return 1
 
     expect_hint "первая / вторая"
 }
@@ -473,7 +478,7 @@ hint_WhenCarriageReturns_DropsThem() {
 hint_WhenSilence_WritesDash() {
     new_meeting
 
-    "$bin/meeting-hint" "$meeting" 1762774262.007 7 "" || return 1
+    bash "$bin/meeting-hint" "$meeting" 1762774262.007 7 "" || return 1
 
     expect_hint "-"
 }
@@ -490,7 +495,7 @@ notify_WhenPowershellPresent_PassesTextThroughWslenv() {
     stub_powershell
     local text='Ответ: '\''да'\'' "нет" $HOME `x`'
 
-    PATH="$work/stub-ps:$PATH" WSLENV="USERPROFILE/p" "$bin/meeting-notify" "$text"$'\r' || return 1
+    PATH="$work/stub-ps:$PATH" WSLENV="USERPROFILE/p" bash "$bin/meeting-notify" "$text"$'\r' || return 1
 
     [ "$(cat "$work/notify.text")" = "$text" ] || { echo "текст: $(cat "$work/notify.text")"; return 1; }
     [ "$(cat "$work/notify.wslenv")" = "USERPROFILE/p:MEETING_NOTIFY_TEXT" ] ||
@@ -500,7 +505,7 @@ notify_WhenPowershellPresent_PassesTextThroughWslenv() {
 notify_WhenMultiline_JoinsLinesWithSpace() {
     stub_powershell
 
-    PATH="$work/stub-ps:$PATH" "$bin/meeting-notify" $'первая\r\nвторая' || return 1
+    PATH="$work/stub-ps:$PATH" bash "$bin/meeting-notify" $'первая\r\nвторая' || return 1
 
     [ "$(cat "$work/notify.text")" = "первая вторая" ] || { echo "текст: $(cat "$work/notify.text")"; return 1; }
 }
@@ -508,7 +513,7 @@ notify_WhenMultiline_JoinsLinesWithSpace() {
 notify_WhenNoWslenvBefore_SetsOnlyItsName() {
     stub_powershell
 
-    PATH="$work/stub-ps:$PATH" WSLENV= "$bin/meeting-notify" "текст" || return 1
+    PATH="$work/stub-ps:$PATH" WSLENV= bash "$bin/meeting-notify" "текст" || return 1
 
     [ "$(cat "$work/notify.wslenv")" = "MEETING_NOTIFY_TEXT" ] || { echo "WSLENV: $(cat "$work/notify.wslenv")"; return 1; }
 }
@@ -522,8 +527,9 @@ notify_WhenNoPowershell_ExitsQuietly() {
     [ -z "$output" ] || { echo "вывод: $output"; return 1; }
 }
 
-install="$(cd "$(dirname "$0")/../../../scripts" && pwd)/install-skill.sh"
-skill_dir="$(cd "$(dirname "$0")/.." && pwd)"
+repo="$(cd "$(dirname "$0")/../.." && pwd)"
+install="$repo/scripts/install-skill.sh"
+skill_dir="$(cd "$repo/plugins/meeting/skills/meeting" && pwd -P)"
 
 # Установка — в свой каталог настроек Claude Code, чтобы не тронуть настоящий.
 install_into() {
@@ -542,7 +548,7 @@ install_WhenEmpty_LinksSkillAndRepeatIsNoOp() {
 
 install_WhenRepositoryOpenedThroughLink_RepeatIsNoOp() {
     local config="$work/config-linked"
-    ln -s "$(cd "$skill_dir/../.." && pwd)" "$work/repo-link"
+    ln -s "$repo" "$work/repo-link"
 
     CLAUDE_CONFIG_DIR="$config" "$work/repo-link/scripts/install-skill.sh" > "$work/install.log" 2>&1 ||
         { cat "$work/install.log"; return 1; }

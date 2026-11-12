@@ -55,7 +55,7 @@ done
 
 # Скрипты скилла /meeting — bash-тесты; фильтр в аргументах относится к тестам .NET, скилл под ним не гоняется.
 if [ $# -eq 0 ]; then
-    output=$(skills/meeting/tests/run.sh 2>&1)
+    output=$(bash tests/meeting-skill/run.sh 2>&1)
     code=$?
     count=$(printf '%s' "$output" | grep -oP 'итого: \K\d+' | tail -1)
     total=$((total + ${count:-0}))

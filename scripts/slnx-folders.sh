@@ -37,7 +37,7 @@ ROOT_FILES = [
 ]
 
 # Каталоги, файлы которых раскладываются по папкам решения; вложенный каталог — своя папка.
-TREES = ["docs", "scripts", "skills", "prototype"]
+TREES = ["docs", "scripts", "plugins", ".claude-plugin", "tests/meeting-skill", "prototype"]
 
 tracked = subprocess.run(
     ["git", "ls-files", "--", *TREES, *ROOT_FILES],

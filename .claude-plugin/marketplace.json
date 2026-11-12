@@ -1,0 +1,12 @@
+{
+  "name": "meeting-assistant",
+  "owner": { "name": "juk-777" },
+  "description": "MeetingAssistant: локальная запись созвона и подсказки Claude Code.",
+  "plugins": [
+    {
+      "name": "meeting",
+      "source": "./plugins/meeting",
+      "description": "Подсказки рабочей сессии Claude Code на созвоне: запись встречи, транскрипт, подсказки по событиям, протокол."
+    }
+  ]
+}
