@@ -629,6 +629,42 @@ install_WhenLinkedElsewhere_RefusesAndKeepsLink() {
     [ "$(readlink -f "$config/skills/meeting")" = "$work/other-skill" ] || { echo "ссылка тронута"; return 1; }
 }
 
+# Скрипты выпуска и моделей репозитория — те же bash-тесты: отдельного набора ради двух скриптов нет.
+models_WhenChecksumsListedTwice_TheyMatch() {
+    local name ps sh
+    for name in vad recognizer; do
+        ps=$(grep -oP "^\\\$${name}Sha256 = '\K[0-9a-f]{64}" "$repo/scripts/install.ps1")
+        sh=$(grep -oP "^${name}_sha256=\K[0-9a-f]{64}" "$repo/scripts/download-models.sh")
+        [ -n "$ps" ] && [ "$ps" = "$sh" ] || { echo "$name: install.ps1 '$ps', download-models.sh '$sh'"; return 1; }
+    done
+}
+
+release_WhenPluginVersionMatchesTag_PrintsVersion() {
+    printf '{ "name": "meeting", "version": "1.2.3" }\n' > "$work/plugin.json"
+    local got
+    got=$(bash "$repo/scripts/release-version.sh" v1.2.3 "$work/plugin.json") || return 1
+    [ "$got" = "1.2.3" ] || { echo "получено: $got"; return 1; }
+}
+
+release_WhenPluginVersionDiffers_Refuses() {
+    printf '{ "name": "meeting", "version": "1.2.2" }\n' > "$work/plugin.json"
+    if bash "$repo/scripts/release-version.sh" v1.2.3 "$work/plugin.json" > /dev/null 2>&1; then
+        echo "отказа нет"
+        return 1
+    fi
+}
+
+release_WhenTagIsNotVersion_Refuses() {
+    printf '{ "name": "meeting", "version": "1.2.3" }\n' > "$work/plugin.json"
+    local tag
+    for tag in 1.2.3 v1.2 release-1.2.3; do
+        if bash "$repo/scripts/release-version.sh" "$tag" "$work/plugin.json" > /dev/null 2>&1; then
+            echo "отказа нет: $tag"
+            return 1
+        fi
+    done
+}
+
 for test in $(declare -F | awk '{ print $3 }' | grep -E '^[a-z]+_When'); do
     run "$test"
 done

@@ -1,0 +1,37 @@
+# Тесты на каждый pull request и слияние в main; release.yml зовёт этот же набор перед выпуском.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Модели меняются только с именем архива — ключ кеша по нему, а не по коммиту.
+      - name: Модели из кеша
+        id: models
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: models-gigaam-v3-ctc-punct-2025-12-16-silero-vad
+
+      - name: Модели из релиза sherpa-onnx
+        if: steps.models.outputs.cache-hit != 'true'
+        run: ./scripts/download-models.sh
+
+      - name: Тесты
+        run: ./scripts/test.sh

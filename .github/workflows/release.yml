@@ -1,0 +1,57 @@
+# Выпуск по тегу vX.Y.Z на main: сверка версии плагина с тегом, тесты, сборка meeting под Windows, релиз GitHub
+# с архивом, его SHA-256 и install.ps1. Устройство — docs/specs/2026-11-12-distribution.md.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        run: echo "version=$(./scripts/release-version.sh "$GITHUB_REF_NAME")" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: version
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: [version, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Сборка под Windows на Linux-раннере: нативные библиотеки sherpa-onnx и onnxruntime приходят из NuGet под win-x64.
+      - name: Сборка meeting
+        run: >
+          dotnet publish src/MeetingAssistant.Cli/MeetingAssistant.Cli.csproj
+          -c Release -r win-x64 --self-contained true -p:Version="$VERSION" -o publish --nologo
+
+      - name: Архив и контрольная сумма
+        run: |
+          (cd publish && zip -qr ../meeting-win-x64.zip .)
+          sha256sum meeting-win-x64.zip > meeting-win-x64.zip.sha256
+
+      - name: Релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" meeting-win-x64.zip meeting-win-x64.zip.sha256 scripts/install.ps1
+          --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
