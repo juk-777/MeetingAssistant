@@ -42,6 +42,7 @@
     <File Path="docs/specs/2026-11-12-device-packet-time.md" />
     <File Path="docs/specs/2026-11-12-distribution.md" />
     <File Path="docs/specs/2026-11-12-install-and-start.md" />
+    <File Path="docs/specs/2026-11-12-refine.md" />
     <File Path="docs/specs/_template.md" />
   </Folder>
   <Folder Name="/Solution Items/plugins/meeting/.claude-plugin/">
