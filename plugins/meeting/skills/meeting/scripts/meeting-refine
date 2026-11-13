@@ -45,6 +45,10 @@ if (-not $env:Speech__ModelsDirectory) { [Console]::Error.WriteLine("Прило�
 $whisper = Join-Path $env:Speech__ModelsDirectory "ggml-large-v3-turbo-q5_0.bin"
 if (-not (Test-Path $whisper)) { [Console]::Error.WriteLine("Нет модели Whisper ($whisper): приложение поставлено до уточнения встречи. Обновить — meeting-install."); exit 3 }
 $command = "`"$meeting`" refine `"$env:MEETING_REFINE_DIR`""
+# Claude Code для Windows запускает Git Bash новой группой процессов, то есть с выключенным Ctrl+C, и этот флаг
+# наследуют все потомки — окно уточнения тоже. Снять его здесь: окно получает его от этого процесса.
+Add-Type -Namespace MeetingAssistant -Name Console -MemberDefinition "[DllImport(`"kernel32.dll`")] public static extern bool SetConsoleCtrlHandler(IntPtr handler, bool add);"
+[MeetingAssistant.Console]::SetConsoleCtrlHandler([IntPtr]::Zero, $false) | Out-Null
 # pause и после итога: окно не закрывается, пока человек не увидел, чем кончилось.
 Start-Process -FilePath cmd.exe -ArgumentList "/c `"$command & pause`"" -WorkingDirectory $env:USERPROFILE
 ' && opened=0 || opened=$?

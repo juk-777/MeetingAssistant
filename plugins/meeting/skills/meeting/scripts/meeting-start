@@ -50,6 +50,10 @@ $meeting = Join-Path $env:LOCALAPPDATA "MeetingAssistant\app\meeting.exe"
 if (-not (Test-Path $meeting)) { [Console]::Error.WriteLine("Приложение записи не установлено: нет $meeting. Поставить — meeting-install."); exit 3 }
 $command = "`"$meeting`" start `"$env:MEETING_START_NAME`""
 if ($env:MEETING_START_GLOSSARY) { $command += " --glossary `"$env:MEETING_START_GLOSSARY`"" }
+# Claude Code для Windows запускает Git Bash новой группой процессов, то есть с выключенным Ctrl+C, и этот флаг
+# наследуют все потомки — окно записи тоже. Снять его здесь: окно получает его от этого процесса.
+Add-Type -Namespace MeetingAssistant -Name Console -MemberDefinition "[DllImport(`"kernel32.dll`")] public static extern bool SetConsoleCtrlHandler(IntPtr handler, bool add);"
+[MeetingAssistant.Console]::SetConsoleCtrlHandler([IntPtr]::Zero, $false) | Out-Null
 # Через cmd /c и pause всегда: окно не закрывается ни при отказе (видна причина), ни после Ctrl+C (виден итог —
 # строки, события, CPU и пик памяти встречи есть только в нём).
 Start-Process -FilePath cmd.exe -ArgumentList "/c `"$command & pause`"" -WorkingDirectory $env:USERPROFILE
