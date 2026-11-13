@@ -14,7 +14,7 @@ public sealed class WakePolicyTests
     }
 
     [Theory]
-    [InlineData("Клод, подскажи, где это решение")]
+    [InlineData("Агент, подскажи, где это решение")]
     [InlineData("а что скажет агент")]
     [InlineData("АГЕНТ, проверь")]
     public void Evaluate_WhenAddressWordPresent_ReturnsAddress(string text)
@@ -22,9 +22,15 @@ public sealed class WakePolicyTests
         WakePolicy.Evaluate(text, Glossary.Empty, NoSpeech).ShouldBe([WakeReason.Address]);
     }
 
+    [Fact]
+    public void Evaluate_WhenClaudeNamed_ReturnsNoReasons()
+    {
+        WakePolicy.Evaluate("Клод, подскажи", Glossary.Empty, NoSpeech).ShouldBeEmpty();
+    }
+
     [Theory]
     [InlineData("агентство уже ответило")]
-    [InlineData("клодовый вариант")]
+    [InlineData("тут нужен субагент")]
     public void Evaluate_WhenAddressWordIsPartOfAnotherWord_ReturnsNoReasons(string text)
     {
         WakePolicy.Evaluate(text, Glossary.Empty, NoSpeech).ShouldBeEmpty();
@@ -71,7 +77,7 @@ public sealed class WakePolicyTests
     public void Evaluate_WhenSeveralReasons_ReturnsThemInFixedOrder()
     {
         Glossary glossary = Glossary.Create(["outbox"]).Value;
-        string text = "Клод, " + Question(WakePolicy.MinQuestionWords) + " outbox";
+        string text = "Агент, " + Question(WakePolicy.MinQuestionWords) + " outbox";
 
         WakePolicy.Evaluate(text, glossary, WakePolicy.AccumulatedSpeechLimit)
             .ShouldBe([WakeReason.Address, WakeReason.Question, WakeReason.Term]);

@@ -50,7 +50,8 @@ public static partial class WakePolicy
         return reasons;
     }
 
-    [GeneratedRegex(@"\b(?:клод|агент)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    // Одно слово, которое распознавание пишет верно: «клод» GigaAM не выдаёт (docs/decisions.md).
+    [GeneratedRegex(@"\bагент\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex AddressWord();
 
     [GeneratedRegex(@"[\p{L}\p{N}]+")]

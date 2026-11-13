@@ -59,7 +59,7 @@ public sealed class MeetingTests
         Meeting meeting = Running();
         DateTimeOffset recognizedAt = Start.AddSeconds(5);
 
-        Utterance utterance = meeting.Record(Channel.Others, ShortSpan, "Клод, что скажешь", recognizedAt);
+        Utterance utterance = meeting.Record(Channel.Others, ShortSpan, "Агент, что скажешь", recognizedAt);
 
         IReadOnlyList<IDomainEvent> events = meeting.DequeueDomainEvents();
         events.Count.ShouldBe(2);
@@ -92,7 +92,7 @@ public sealed class MeetingTests
         SpeechSpan twoSeconds = new(TimeSpan.Zero, TimeSpan.FromSeconds(2));
 
         meeting.Record(Channel.Me, almostLimit, Statement, Start);
-        meeting.Record(Channel.Me, ShortSpan, "Клод, отметь", Start);
+        meeting.Record(Channel.Me, ShortSpan, "Агент, отметь", Start);
         meeting.DequeueDomainEvents();
 
         meeting.Record(Channel.Me, twoSeconds, Statement, Start);
