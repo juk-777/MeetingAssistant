@@ -19,6 +19,19 @@ internal static class Models
     /// </summary>
     public static string ExampleWav => Path.Combine(Directory, SpeechModels.RecognizerDirectory, "test_wavs", "example.wav");
 
+    /// <summary>
+    /// Whisper tiny: проверяет связку с Whisper.net, а не качество.
+    /// </summary>
+    public static string WhisperTiny => Path.Combine(Directory, "ggml-tiny.bin");
+
+    public static void EnsureWhisperTinyPresent()
+    {
+        if (!File.Exists(WhisperTiny))
+        {
+            Assert.Fail($"Нет модели {WhisperTiny}.\n{SpeechModels.DownloadHint}");
+        }
+    }
+
     public static void EnsurePresent()
     {
         IReadOnlyList<string> missing = SpeechModels.Missing(Directory);

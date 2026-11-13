@@ -1,4 +1,5 @@
 using System.CommandLine;
+using MeetingAssistant.Cli.Refine;
 using MeetingAssistant.Cli.Replay;
 using MeetingAssistant.Cli.Start;
 
@@ -6,6 +7,7 @@ RootCommand rootCommand = new("Запись встречи: транскрипт
 {
     StartCommand.Create(),
     ReplayCommand.Create(),
+    RefineCommand.Create(),
 };
 
 // Ctrl+C отменяет подачу звука, а уже вырезанные фразы распознаются и встреча получает конец записи.

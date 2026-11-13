@@ -9,7 +9,8 @@
 модели и корень встреч остаются. Устройство — docs/specs/2026-11-12-distribution.md.
 
 Без ключей — сборка из релиза GitHub (последнего или -Version) со сверкой SHA-256 из того же релиза. Моделей нет —
-качаются из релиза sherpa-onnx и сверяются с SHA-256, записанными ниже. Всё скачивается и проверяется до того,
+качаются (GigaAM и VAD — из релиза sherpa-onnx, Whisper turbo для уточнения встречи — с Hugging Face) и сверяются
+с SHA-256, записанными ниже. Всё скачивается и проверяется до того,
 как тронут установленный app. -FromSource — сборка из репозитория, где лежит скрипт (нужен .NET SDK 10), модели —
 из его models/, если они там есть.
 
@@ -65,6 +66,12 @@ $vadSha256 = '9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6'
 $recognizerArchive = "$recognizerDirectory.tar.bz2"
 $recognizerSha256 = '20e41e160efa6f2460a7ef6554cdbbb9e8fffb2b92e6bc708e9406bd8b9256ea'
 
+# Whisper turbo — для уточнения встречи (meeting refine); имя — SpeechModels.WhisperFile. Адрес закреплён
+# на ревизии Hugging Face: по main файл мог бы смениться и разойтись с суммой.
+$whisperFile = 'ggml-large-v3-turbo-q5_0.bin'
+$whisperSource = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/$whisperFile"
+$whisperSha256 = '394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2'
+
 function Test-Models([string]$directory) {
     -not ($modelFiles | Where-Object { -not (Test-Path (Join-Path $directory $_)) })
 }
@@ -101,7 +108,7 @@ try {
     $running = @(Get-Process -Name meeting -ErrorAction SilentlyContinue |
         Where-Object { $_.Path -and $_.Path.StartsWith($app, [StringComparison]::OrdinalIgnoreCase) })
     if ($running.Count -gt 0) {
-        throw "Идёт встреча (meeting, PID $($running[0].Id)): остановите её — Ctrl+C в окне записи — и повторите."
+        throw "Запущен meeting (PID $($running[0].Id)) — запись или уточнение встречи: остановите его — Ctrl+C в его окне — и повторите."
     }
 
     foreach ($leftover in $staging, $downloads) {
@@ -156,6 +163,23 @@ try {
         if (-not (Test-Models $unpacked)) { throw "Модель распакована не полностью: нет одного из $($modelFiles -join ', ')." }
     }
 
+    # Whisper — отдельно от GigaAM: у прежней установки его нет, а GigaAM уже стоит. Сверка — и для копии
+    # из репозитория: models/ репозитория кладут руками.
+    $whisperStaged = Join-Path $downloads $whisperFile
+    $whisperFromRepository = $sourceModels -and (Test-Path (Join-Path $sourceModels $whisperFile))
+    $whisperNeeded = -not (Test-Path (Join-Path $models $whisperFile))
+    if ($whisperNeeded) {
+        if ($whisperFromRepository) {
+            Write-Host 'Модель Whisper из репозитория...'
+            Copy-Item (Join-Path $sourceModels $whisperFile) $whisperStaged
+        }
+        else {
+            Write-Host 'Загрузка модели Whisper (574 МБ)...'
+            Save-File $whisperSource $whisperStaged
+        }
+        Assert-Sha256 $whisperStaged $whisperSha256 'файл повреждён или подменён.'
+    }
+
     # 3. Замена app. Старый сначала переименовывается: занятый файл даёт отказ здесь, а app остаётся целым.
     if (Test-Path $previous) { Remove-Item $previous -Recurse -Force }
     if (Test-Path $app) { Rename-Item $app (Split-Path $previous -Leaf) }
@@ -176,6 +200,9 @@ try {
         if (Test-Path $target) { Remove-Item $target -Recurse -Force }
         Move-Item (Join-Path $unpacked $recognizerDirectory) $models
         Move-Item (Join-Path $unpacked $vadFile) $models -Force
+    }
+    if ($whisperNeeded) {
+        Move-Item $whisperStaged $models
     }
 
     # 5. PATH пользователя — сырым значением реестра и того же типа: через GetEnvironmentVariable записи вида %X%\bin

@@ -6,6 +6,8 @@
     <PackageReference Include="NAudio.Core" />
     <PackageReference Include="NAudio.Wasapi" />
     <PackageReference Include="org.k2fsa.sherpa.onnx" />
+    <PackageReference Include="Whisper.net" />
+    <PackageReference Include="Whisper.net.Runtime" />
   </ItemGroup>
 
   <ItemGroup>

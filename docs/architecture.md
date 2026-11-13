@@ -3,11 +3,65 @@
 Две части: приложение записи под Windows и скилл `/meeting` для Claude Code; подсказка показывается уведомлением
 Windows и в терминале сессии. Связь между частями — только файлы в каталоге встречи.
 
+Во время встречи:
+
+```mermaid
+flowchart LR
+    mic["Микрофон<br/>канал «Я»"]
+    loopback["Системный звук<br/>канал «Собеседники»"]
+
+    subgraph app["meeting start — Windows"]
+        capture["Захват WASAPI<br/>16 кГц моно на канал"]
+        vad["Silero VAD<br/>фразы по паузам"]
+        asr["GigaAM v3 CTC<br/>распознавание на CPU"]
+    end
+
+    subgraph folder["Каталог встречи"]
+        wav[("audio.wav")]
+        transcript[("transcript.md")]
+        events[("events.log")]
+        hints[("hints.md")]
+    end
+
+    subgraph session["Сессия Claude Code проекта — /meeting"]
+        watch["meeting-watch<br/>под Monitor"]
+        claude["Claude<br/>код, доки, issue"]
+    end
+
+    toast["Уведомление Windows<br/>и терминал"]
+
+    mic --> capture
+    loopback --> capture
+    capture --> wav
+    capture --> vad --> asr
+    asr --> transcript
+    asr --> events
+    events -->|"событие"| watch
+    transcript -->|"новые строки"| watch
+    watch --> claude
+    claude -->|"подсказка или молчание"| hints
+    claude -->|"подсказка"| toast
 ```
-микрофон ───────WASAPI───────────┐
-                                  ├─ 16 кГц моно на канал ─ Silero VAD ─ GigaAM v3 CTC ─┬─ transcript.md
-системный звук ─WASAPI loopback──┘                                                     ├─ events.log ─meeting-watch─ Monitor ─ сессия Claude Code
-                                  └──────────────────────────────── audio.wav           └─ уведомление, hints.md ←┘
+
+После встречи:
+
+```mermaid
+flowchart LR
+    subgraph folder["Каталог встречи"]
+        wav[("audio.wav")]
+        transcript[("transcript.md<br/>GigaAM, вживую")]
+        whisper[("transcript.whisper.md")]
+        protocol[("protocol.md")]
+    end
+
+    refine["meeting refine — Windows<br/>Whisper turbo, фоном"]
+    claude["Сессия Claude Code<br/>/meeting протокол"]
+
+    wav -.->|"/meeting уточнить,<br/>по команде"| refine
+    refine -.-> whisper
+    transcript --> claude
+    whisper -.->|"если есть"| claude
+    claude --> protocol
 ```
 
 ## Структура кода: Clean Architecture + DDD
@@ -18,8 +72,8 @@ Windows и в терминале сессии. Связь между частя�
 src/
   MeetingAssistant.SharedKernel/    ← Entity, AggregateRoot, IDomainEvent, DomainException, Result, Error
   MeetingAssistant.Domain/          ← агрегат Meeting, Utterance, Channel, правила пробуждения; знает только SharedKernel
-  MeetingAssistant.Application/     ← сценарии (StartMeeting, StopMeeting, RecognizeSpeech), ICommand/IQuery, порты
-  MeetingAssistant.Infrastructure/  ← по внешним системам: Audio/ (NAudio), Speech/ (sherpa-onnx), Storage/ (файлы встречи)
+  MeetingAssistant.Application/     ← сценарии (StartMeeting, StopMeeting, RecognizeSpeech, RefineMeeting), ICommand/IQuery, порты
+  MeetingAssistant.Infrastructure/  ← по внешним системам: Audio/ (NAudio), Speech/ (sherpa-onnx, Whisper.net), Storage/ (файлы встречи)
   MeetingAssistant.Cli/             ← точка входа: команды, DI, конфиг, Ctrl+C
 tests/
   MeetingAssistant.Domain.UnitTests/
@@ -107,6 +161,30 @@ tests/
   - `meeting replay <wav> [--name] [--glossary] [--speed]` — запись с диска через тот же конвейер. Стерео:
     левый канал — «Я», правый — «Собеседники»; моно — «Собеседники». Только 16 кГц, PCM 16 или float 32.
   - В конце обе команды печатают итог: строки, события, время распознавания фразы, CPU процесса и пик памяти.
+  - `meeting refine <каталог>` — уточнение законченной встречи (ниже).
+
+### Уточнение встречи ([#20](https://github.com/juk-777/MeetingAssistant/issues/20))
+
+Сценарий `RefineMeeting` (Application) — второй транскрипт `transcript.whisper.md` по звуку `audio.wav`:
+- встреча должна быть законченной: в `events.log` есть `конец записи`, иначе отказ до загрузки модели;
+- каналы `audio.wav` режет свой Silero VAD на канал с теми же параметрами; подряд идущие фразы канала копятся
+  в кусок до окна распознавателя (`SpeechGroup`, у Whisper — 30 с), кусок распознаётся, как только следующая фраза
+  в него не помещается, и следующий кусок звука читается только после этого — очереди нет, в памяти не больше
+  окна на канал;
+- распознаватель — порт `IRefineRecognizer` (окно, подготовка, отрезки текста со временем от начала куска),
+  реализация — Whisper large-v3-turbo-q5_0 через Whisper.net: `ru`, без контекста предыдущего куска, половина
+  логических процессоров; процесс — с приоритетом «ниже среднего»;
+- строка — отрезок Whisper; его начало и конец переводятся на время записи по фразе, в которую попали;
+- модель лежит в каталоге моделей рядом с GigaAM, её ставит установка; нет её — `Prepare` отказывает с советом
+  повторить установку;
+- строки пишутся в `transcript.whisper.md.part`, по окончании он переименовывается; при отмене и сбое удаляется,
+  прежний `transcript.whisper.md` цел;
+- ход — `IProgress<RefinePosition>` в команде: окно печатает место в записи и оценку остатка, в конце — итог.
+
+Формат строк — как у `transcript.md`; строки по времени записи, номер свой, с 1. Строка — отрезок Whisper, а не
+фраза VAD, поэтому строки двух транскриптов сопоставляются по каналу и таймкоду. Кусок редкого канала
+распознаётся позже, поэтому строки копятся (только текст) и пишутся в конце. Черновик открыт без совместного
+доступа: второе уточнение той же встречи получает отказ.
 
 ### Формат `transcript.md`
 
@@ -181,7 +259,11 @@ Claude Code держит копию в своём кеше; в рабочей к
   `SendMessage` в сессию того проекта (`ListAgents` — список сессий).
 - **Где видно.** Этап 1 — терминал плюс уведомление Windows. Этап 2 — окно поверх остальных, читает `hints.md`.
 - **После встречи.** `/meeting протокол` пишет `protocol.md` в каталог встречи: темы, решения, задачи, открытые
-  вопросы, у каждого пункта таймкод. Спорные места — по таймкоду с вариантами прочтения.
+  вопросы, у каждого пункта таймкод. Спорные места — по таймкоду с вариантами прочтения. `/meeting уточнить` —
+  `meeting-refine` открывает окно `meeting refine` (как `meeting-start`, окно ждёт клавишу и после итога) и сразу
+  возвращается; встречу без `конец записи` отвергает сам, не открывая окна. Есть `transcript.whisper.md` —
+  протокол сводит оба транскрипта и выносит расхождения в цифрах, сроках, именах отдельным разделом; есть только
+  `.part` — пишет по GigaAM с пометкой, что уточнение идёт.
 
 ### Вывод `meeting-watch`
 
@@ -214,12 +296,15 @@ Claude Code держит копию в своём кеше; в рабочей к
 - **Выпуск** (`release.yml`) — на тег `vX.Y.Z`, стоящий на `main`: `scripts/release-version.sh` сверяет тег
   с версией плагина, тесты, `dotnet publish -r win-x64 --self-contained` с версией тега, релиз GitHub
   с `meeting-win-x64.zip`, его SHA-256 и `install.ps1`; версия с суффиксом — предварительный релиз.
-- **Установка** (`scripts/install.ps1`) — в `%LOCALAPPDATA%\MeetingAssistant`: `app`, `models`, переменные
-  пользователя, `PATH`; порядок — скачать и сверить всё, затем заменить `app`, модели, переменные.
+- **Установка** (`scripts/install.ps1`) — в `%LOCALAPPDATA%\MeetingAssistant`: `app`, `models` (GigaAM, VAD,
+  Whisper turbo для уточнения — каждая качается, только если её нет), переменные пользователя, `PATH`; порядок —
+  скачать и сверить всё, затем заменить `app`, модели, переменные.
 - **Скилл** — плагин `meeting` маркетплейса `meeting-assistant` (раздел 2).
 
 ## Данные
 
-Звук, транскрипт и модели остаются на машине. Наружу (в Anthropic) уходит только текст, который читает сессия, —
-тот же канал, что и для кода. Granola и облачные аналоги отвергнуты как раз из-за отправки звука и текста третьим
-сторонам (`docs/decisions.md`).
+Звук, файлы встречи и модели хранятся на машине. Наружу (в Anthropic) уходит текст: весь транскрипт встречи,
+к которой подключена сессия, и оба транскрипта, когда она пишет протокол. Звук не уходит никуда. Это тот же
+получатель и те же условия, что для кода проекта; новых сервисов, получающих разговор, нет. Granola и облачные
+аналоги отвергнуты как раз из-за отправки звука и текста третьим сторонам (`docs/decisions.md`). Чтобы не уходил
+и текст, вместо Claude нужна локальная модель — это другая задача.

@@ -31,6 +31,11 @@ internal sealed class HoldingDetectors : IVoiceActivityDetectorFactory
 
 internal sealed class HoldingDetector : IVoiceActivityDetector
 {
+    /// <summary>
+    /// Кусок, заполненный этим значением, — пауза: фразой не становится и закрывает удержанную.
+    /// </summary>
+    public const float PauseSample = float.NegativeInfinity;
+
     private long _position;
     private DetectedPhrase? _held;
 
@@ -41,7 +46,8 @@ internal sealed class HoldingDetector : IVoiceActivityDetector
     public IReadOnlyList<DetectedPhrase> Accept(ReadOnlyMemory<float> samples)
     {
         DetectedPhrase? previous = _held;
-        _held = new DetectedPhrase(SpeechAudio.Duration(_position), samples);
+        bool pause = samples.Length > 0 && float.IsNegativeInfinity(samples.Span[0]);
+        _held = pause ? null : new DetectedPhrase(SpeechAudio.Duration(_position), samples);
         _position += samples.Length;
         return previous is null ? [] : [previous];
     }
@@ -76,6 +82,12 @@ internal sealed class ScriptedSource(IReadOnlyList<AudioChunk> chunks, bool endl
 
     public static AudioChunk Seconds(Channel channel, int seconds) =>
         new(channel, new float[SpeechAudio.SampleRate * seconds]);
+
+    /// <summary>
+    /// Пауза для <see cref="HoldingDetector"/>.
+    /// </summary>
+    public static AudioChunk Pause(Channel channel, int seconds) =>
+        new(channel, Enumerable.Repeat(HoldingDetector.PauseSample, SpeechAudio.SampleRate * seconds).ToArray());
 
     public async IAsyncEnumerable<AudioChunk> Read([EnumeratorCancellation] CancellationToken cancellationToken)
     {

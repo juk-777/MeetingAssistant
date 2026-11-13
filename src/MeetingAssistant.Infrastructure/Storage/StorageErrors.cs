@@ -8,6 +8,25 @@ namespace MeetingAssistant.Infrastructure.Storage;
 public static class StorageErrors
 {
     public const string MeetingsRootNotAbsoluteCode = "Storage.MeetingsRootNotAbsolute";
+    public const string MeetingNotFoundCode = "Storage.MeetingNotFound";
+    public const string AudioNotFoundCode = "Storage.AudioNotFound";
+    public const string RecordingNotFinishedCode = "Storage.RecordingNotFinished";
+    public const string RefineInProgressCode = "Storage.RefineInProgress";
+
+    public static Error RefineInProgress(string directory) =>
+        new(RefineInProgressCode, $"Встречу {directory} уже уточняет другое окно meeting refine: дождитесь его конца.");
+
+    public static Error MeetingNotFound(string directory) =>
+        new(MeetingNotFoundCode, $"Нет каталога встречи: {directory}.");
+
+    public static Error AudioNotFound(string path) =>
+        new(AudioNotFoundCode, $"Нет звука встречи: {path}.");
+
+    public static Error RecordingNotFinished(string directory) =>
+        new(
+            RecordingNotFinishedCode,
+            $"Запись встречи {directory} не закончена: в {EventsFile.FileName} нет «{MeetingFileFormat.EndOfRecording}». " +
+            "Остановите запись (Ctrl+C в окне meeting) и повторите; оборванную аварийно встречу уточнить нельзя.");
 
     public static Error MeetingsRootNotAbsolute(string root) =>
         new(

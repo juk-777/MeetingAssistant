@@ -441,6 +441,77 @@ start_WhenRootNotSet_ExitsAsNotInstalled() {
     [ "$code" -eq 3 ] || { echo "код: $code"; return 1; }
 }
 
+# Заглушка powershell.exe для meeting-refine: пишет каталог, переданный окну, в refine.args.
+stub_refine() {
+    rm -rf "$work/stub-refine" "$work/refine.args"
+    mkdir -p "$work/stub-refine"
+    printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$MEETING_REFINE_DIR" > "%s/refine.args"\n' "$work" > "$work/stub-refine/powershell.exe"
+    chmod +x "$work/stub-refine/powershell.exe"
+}
+
+windows_path() {
+    if command -v wslpath > /dev/null; then wslpath -w "$1"; else printf '%s\n' "$1"; fi
+}
+
+refine_WhenFinishedMeetingGiven_OpensWindowForItAndPrintsIt() {
+    new_meeting
+    utterance 1
+    end_of_recording 1
+    stub_refine
+
+    local got
+    got=$(PATH="$work/stub-refine:$PATH" timeout 5 bash "$bin/meeting-refine" "$meeting") || return 1
+
+    [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
+    [ "$(cat "$work/refine.args")" = "$(windows_path "$meeting")" ] || { cat "$work/refine.args"; return 1; }
+}
+
+refine_WhenNoDirectoryGiven_TakesCurrentMeeting() {
+    new_meeting
+    end_of_recording 0
+    stub_refine
+    mkdir -p "$work/refine-root"
+    jq -n --arg d "$meeting" '{ id: "x", directory: $d }' > "$work/refine-root/current.json"
+
+    local got
+    got=$(PATH="$work/stub-refine:$PATH" MEETINGS_ROOT="$work/refine-root" timeout 5 bash "$bin/meeting-refine") || return 1
+
+    [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
+    [ "$(cat "$work/refine.args")" = "$(windows_path "$meeting")" ] || { cat "$work/refine.args"; return 1; }
+}
+
+refine_WhenRecordingNotFinished_RefusesWithoutWindow() {
+    new_meeting
+    utterance 1
+    event 1
+    stub_refine
+
+    if PATH="$work/stub-refine:$PATH" timeout 5 bash "$bin/meeting-refine" "$meeting" > /dev/null 2> "$work/refine.err"; then
+        echo "отказа нет"
+        return 1
+    fi
+    [ ! -f "$work/refine.args" ] || { echo "окно открыто"; return 1; }
+    grep -q 'не закончена' "$work/refine.err" || { cat "$work/refine.err"; return 1; }
+}
+
+refine_WhenAppNotInstalled_ExitsAsNotInstalled() {
+    new_meeting
+    end_of_recording 0
+    stub_refine
+    printf 'exit 3\n' >> "$work/stub-refine/powershell.exe"
+
+    local code=0
+    PATH="$work/stub-refine:$PATH" timeout 5 bash "$bin/meeting-refine" "$meeting" > /dev/null 2>&1 || code=$?
+    [ "$code" -eq 3 ] || { echo "код: $code"; return 1; }
+}
+
+refine_WhenRootNotSet_ExitsAsNotInstalled() {
+    stub_reg
+    local code=0
+    PATH="$work/stub-reg:$PATH" MEETINGS_ROOT="" timeout 5 bash "$bin/meeting-refine" > /dev/null 2>&1 || code=$?
+    [ "$code" -eq 3 ] || { echo "код: $code"; return 1; }
+}
+
 # Заглушка powershell.exe для meeting-install: пишет адрес релизов и команду, выходит с кодом из setup.code.
 stub_setup() {
     rm -rf "$work/stub-setup"
@@ -647,6 +718,15 @@ models_WhenChecksumsListedTwice_TheyMatch() {
         sh=$(grep -oP "^${name}_sha256=\K[0-9a-f]{64}" "$repo/scripts/download-models.sh")
         [ -n "$ps" ] && [ "$ps" = "$sh" ] || { echo "$name: install.ps1 '$ps', download-models.sh '$sh'"; return 1; }
     done
+}
+
+models_WhenWhisperFileNamedInThreePlaces_NamesMatch() {
+    local code ps refine
+    code=$(grep -oP 'WhisperFile = "\K[^"]+' "$repo/src/MeetingAssistant.Infrastructure/Speech/SpeechOptions.cs")
+    ps=$(grep -oP "^\\\$whisperFile = '\K[^']+" "$repo/scripts/install.ps1")
+    refine=$(grep -oP '"\K[^"]+\.bin(?=")' "$repo/plugins/meeting/skills/meeting/scripts/meeting-refine")
+    [ -n "$code" ] && [ "$code" = "$ps" ] && [ "$code" = "$refine" ] ||
+        { echo "SpeechModels '$code', install.ps1 '$ps', meeting-refine '$refine'"; return 1; }
 }
 
 release_WhenPluginVersionMatchesTag_PrintsVersion() {

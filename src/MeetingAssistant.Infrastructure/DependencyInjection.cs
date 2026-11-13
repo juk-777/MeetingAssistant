@@ -1,5 +1,6 @@
 using MeetingAssistant.Application.Meetings;
 using MeetingAssistant.Application.Meetings.Recording;
+using MeetingAssistant.Application.Meetings.Refine;
 using MeetingAssistant.Infrastructure.Audio;
 using MeetingAssistant.Infrastructure.Speech;
 using MeetingAssistant.Infrastructure.Storage;
@@ -38,6 +39,11 @@ public static class DependencyInjection
         services.AddSingleton<IWakeEventWriter, EventsFile>();
 
         services.AddSingleton<ILiveCapture, LiveCapture>();
+
+        services.AddSingleton<IRecordedMeetings, RecordedMeetingFolder>();
+        services.AddSingleton<IRefinedTranscripts, RefinedTranscriptFiles>();
+        services.AddSingleton<IRefineRecognizer>(provider => new WhisperRefineRecognizer(
+            SpeechModels.Whisper(provider.GetRequiredService<IOptions<SpeechOptions>>().Value.ModelsDirectory)));
 
         return services;
     }
