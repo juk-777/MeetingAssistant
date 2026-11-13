@@ -14,7 +14,8 @@ manifest=${2:-"$(dirname "$0")/../plugins/meeting/.claude-plugin/plugin.json"}
     { echo "Тег $tag — не версия: нужен vX.Y.Z." >&2; exit 1; }
 version=${BASH_REMATCH[1]}
 
-plugin=$(jq -r '.version // empty' "$manifest")
+# Тем же разбором JSON, что и скилл: jq в репозитории не нужен нигде.
+plugin=$(bash "$(dirname "$0")/../plugins/meeting/skills/meeting/scripts/current-field" "$manifest" version) || plugin=""
 [ "$plugin" = "$version" ] ||
     { echo "Версия плагина ($plugin, $manifest) не совпадает с тегом $tag: поднять её в pull request выпуска." >&2; exit 1; }
 
