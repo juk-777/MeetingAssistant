@@ -33,6 +33,9 @@ window_dir=$(bash "$here/windows-path" "$dir")
 # Каталог — переменной окружения, а не в командной строке PowerShell: кавычки и кириллица не ломают команду.
 export MEETING_REFINE_DIR=$window_dir
 export WSLENV="${WSLENV:+$WSLENV:}MEETING_REFINE_DIR"
+# Git Bash переделывает похожие на путь значения переменных, когда запускает программу Windows. Каталог уже в виде
+# Windows, переделывать нечего, — переменные MEETING_* как есть, как во всех скриптах скилла.
+export MSYS2_ENV_CONV_EXCL="${MSYS2_ENV_CONV_EXCL:+$MSYS2_ENV_CONV_EXCL;}MEETING_"
 
 powershell.exe -NoProfile -NonInteractive -Command '
 $ErrorActionPreference = "Stop"

@@ -74,7 +74,8 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -FromSource
 
 Обе сборки из исходников ставят модели так же, как установка из релиза; `-FromSource` берёт их из `models/`
 репозитория, если они там есть. Ссылка `install-skill.sh` вместо плагина: правка скилла в рабочей копии видна
-сразу. В Claude Code для Windows скилл из рабочей копии — `claude --plugin-dir plugins/meeting`. Порядок разработки — `docs/development.md`.
+сразу. В Claude Code для Windows скилл из рабочей копии — `claude --plugin-dir plugins/meeting`. Порядок
+разработки — `docs/development.md`.
 
 ## Как пользоваться
 

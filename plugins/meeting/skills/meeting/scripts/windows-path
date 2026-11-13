@@ -2,8 +2,8 @@
 # Путь для Windows-процесса (окно meeting): из Git Bash — cygpath -w, из WSL — wslpath -w, иначе как есть.
 #
 # Явно, а не на авось: Git Bash сам переделывает похожие на путь переменные, когда запускает Windows-программу,
-# но правило у него неявное (/c/x → C:/x), а путь из /tmp Windows-процессу вовсе не известен. cygpath — первым:
-# в WSL его нет, а в Git Bash нет wslpath.
+# но правило у него неявное (/c/x → C:/x), а путь из /tmp Windows-процессу вовсе не известен. Порядок проверки
+# в настоящих оболочках роли не играет: в WSL нет cygpath, в Git Bash — wslpath.
 #
 # windows-path <путь>
 set -euo pipefail

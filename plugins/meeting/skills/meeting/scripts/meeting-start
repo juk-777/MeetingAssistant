@@ -41,6 +41,9 @@ fi
 # команду.
 export MEETING_START_NAME=$1 MEETING_START_GLOSSARY=$glossary MEETING_START_ROOT=$window_root
 export WSLENV="${WSLENV:+$WSLENV:}MEETING_START_NAME:MEETING_START_GLOSSARY:MEETING_START_ROOT"
+# Git Bash переделывает похожие на путь значения переменных (/x → C:/Program Files/Git/x), когда запускает программу
+# Windows: имя «/ретро» дошло бы чужим. Переменные MEETING_* — как есть.
+export MSYS2_ENV_CONV_EXCL="${MSYS2_ENV_CONV_EXCL:+$MSYS2_ENV_CONV_EXCL;}MEETING_"
 
 powershell.exe -NoProfile -NonInteractive -Command '
 $ErrorActionPreference = "Stop"

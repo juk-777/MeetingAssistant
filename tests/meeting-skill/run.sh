@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Тесты скриптов скилла /meeting на синтетических файлах встречи во временном каталоге.
 #
-# Запускается из scripts/test.sh вместе с тестовыми приложениями .NET; итог — строка «итого: N, упало: M».
+# Запускается из scripts/test.sh вместе с тестовыми приложениями .NET; итог — строка «итого: N, упало: M,
+# пропущено: K», где N — прогнанные тесты. Ни одного прогнанного — провал: всё пропущенное зелёным не считается.
+# Те же тесты идут в Git Bash (Claude Code для Windows): docs/development.md.
 set -uo pipefail
 
 work=$(mktemp -d)
@@ -143,7 +145,7 @@ skip_reason() {
         esac
     else
         case $1 in
-            *_WhenCalledByWindowsPath_*) echo "путь Windows к скрипту бывает только в Git Bash" ;;
+            *_WhenCalledByWindowsPath_* | *InGitBash_*) echo "только в Git Bash" ;;
             *) return 1 ;;
         esac
     fi
@@ -325,19 +327,32 @@ dir_WhenCurrentHasPosixPath_TakesItAsIs() {
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
 }
 
-# Приложение пишет символы вне BMP суррогатной парой \uXXXX\uXXXX, кириллицу — как есть.
+# Приложение пишет символы вне BMP суррогатной парой \uXXXX\uXXXX, кириллицу — как есть; \u — по байту UTF-8
+# от одного до четырёх.
 dir_WhenCurrentHasEscapedWindowsPath_UnescapesIt() {
     new_meeting
     stub_paths
     mkdir -p "$work/escaped-root"
-    printf '{\n  "id": "x",\n  "directory": "D:\\\\Мои встречи\\\\2026_x \\uD83D\\uDE00 \\u0436",\n  "startedAt": "2026"\n}' \
+    printf '{\n  "id": "x",\n  "directory": "D:\\\\Мои встречи\\\\2026_x \\uD83D\\uDE00 \\u0436 \\u2028 \\u0041",\n  "startedAt": "2026"\n}' \
         > "$work/escaped-root/current.json"
 
     local got
     got=$(PATH="$work/stub:$PATH" MEETINGS_ROOT="$work/escaped-root" bash "$bin/meeting-dir") || return 1
 
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
-    grep -qxF -- '-u D:\Мои встречи\2026_x 😀 ж' "$work/paths.calls" || { cat "$work/paths.calls"; return 1; }
+    grep -qxF -- "-u D:\\Мои встречи\\2026_x 😀 ж "$'\xe2\x80\xa8'" A" "$work/paths.calls" || { cat "$work/paths.calls"; return 1; }
+}
+
+# В Git Bash путь Windows из current.json открывается как есть, без wslpath.
+dir_WhenWindowsPathInGitBash_OpensItAsIs() {
+    new_meeting
+    mkdir -p "$work/gitbash-root"
+    current_json "$work/gitbash-root/current.json" x "$(cygpath -w "$meeting")"
+
+    local got
+    got=$(MEETINGS_ROOT="$work/gitbash-root" bash "$bin/meeting-dir") || return 1
+
+    [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
 }
 
 dir_WhenCurrentHasEscapedQuotesAndSlashes_TakesDirectoryWhole() {
@@ -764,6 +779,34 @@ notify_WhenNoWslenvBefore_SetsOnlyItsName() {
     [ "$(cat "$work/notify.wslenv")" = "MEETING_NOTIFY_TEXT" ] || { echo "WSLENV: $(cat "$work/notify.wslenv")"; return 1; }
 }
 
+# stub_native <каталог> <переменная>: заглушка powershell.exe отдаёт переменную настоящему процессу Windows
+# (cmd.exe) и пишет, что тот увидел, в native.out. Git Bash переделывает похожие на путь значения переменных,
+# когда запускает программу Windows, — заглушка-скрипт этого не видит, cmd.exe видит.
+stub_native() {
+    mkdir -p "$1"
+    rm -f "$work/native.out"
+    printf '#!/usr/bin/env bash\ncmd.exe //c "echo %%%s%%" | tr -d "\\r" > "%s/native.out"\n' "$2" "$work" > "$1/powershell.exe"
+    chmod +x "$1/powershell.exe"
+}
+
+notify_WhenTextStartsWithSlashInGitBash_ReachesWindowsUnchanged() {
+    stub_native "$work/stub-native" MEETING_NOTIFY_TEXT
+
+    PATH="$work/stub-native:$PATH" bash "$bin/meeting-notify" '/api/orders 500' || return 1
+
+    [ "$(cat "$work/native.out")" = '/api/orders 500' ] || { cat "$work/native.out"; return 1; }
+}
+
+start_WhenNameStartsWithSlashInGitBash_ReachesWindowsUnchanged() {
+    stub_native "$work/stub-native" MEETING_START_NAME
+    mkdir -p "$work/start-root"
+
+    PATH="$work/stub-native:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=1 \
+        timeout 15 bash "$bin/meeting-start" '/retro' > /dev/null 2>&1
+
+    [ "$(cat "$work/native.out")" = '/retro' ] || { cat "$work/native.out"; return 1; }
+}
+
 notify_WhenNoPowershell_ExitsQuietly() {
     mkdir -p "$work/no-ps"
     local output
@@ -878,5 +921,6 @@ for test in $(declare -F | awk '{ print $3 }' | grep -E '^[a-z]+_When'); do
     run "$test"
 done
 
-echo "итого: $((passed + failed + skipped)), упало: $failed, пропущено: $skipped"
+echo "итого: $((passed + failed)), упало: $failed, пропущено: $skipped"
+[ "$passed" -gt 0 ] || { echo "ни одного прогнанного теста"; exit 1; }
 [ "$failed" -eq 0 ]
