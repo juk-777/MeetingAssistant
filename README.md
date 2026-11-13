@@ -56,7 +56,7 @@ Claude Code прямо в Windows нужен Git for Windows: скрипты с�
 
 ### Из исходников
 
-В WSL — нужны .NET SDK 10, git, curl, python3 и jq (шаг выпуска и его тесты); клон в любом каталоге:
+В WSL — нужны .NET SDK 10, git, curl и python3; клон в любом каталоге:
 
 ```bash
 git clone https://github.com/juk-777/MeetingAssistant.git && cd MeetingAssistant

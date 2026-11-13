@@ -15,9 +15,8 @@ bin="$work/scripts"
 cp -r "$(dirname "$0")/../../plugins/meeting/skills/meeting/scripts" "$bin"
 chmod -x "$bin"/*
 
-# Скриптам скилла jq не положен: в Git for Windows его нет. Заглушка роняет любой вызов и там, где jq стоит
-# (WSL разработчика, раннер GitHub). Шаг выпуска на Linux-раннере jq берёт — его тестам PATH без заглушки.
-path_with_jq=$PATH
+# jq в репозитории не нужен нигде: в Git for Windows его нет, JSON читает current-field. Заглушка роняет любой
+# вызов и там, где jq стоит (WSL разработчика, раннер GitHub).
 mkdir -p "$work/no-jq"
 printf '#!/usr/bin/env bash\necho "jq вызван: $*" >&2\nexit 127\n' > "$work/no-jq/jq"
 chmod +x "$work/no-jq/jq"
@@ -140,7 +139,6 @@ skip_reason() {
     if [[ $OSTYPE == msys* || $OSTYPE == cygwin* ]]; then
         case $1 in
             install_*) echo "install-skill.sh — путь разработчика в WSL; в Windows скилл из рабочей копии — claude --plugin-dir" ;;
-            release_*) echo "release-version.sh — шаг выпуска на Linux-раннере" ;;
             *_WhenSkillLinked_*) echo "ссылка на скилл — путь разработчика в WSL (install-skill.sh); ln -s Git Bash копирует" ;;
             *) return 1 ;;
         esac
@@ -1066,25 +1064,53 @@ models_WhenWhisperFileNamedInThreePlaces_NamesMatch() {
 }
 
 release_WhenPluginVersionMatchesTag_PrintsVersion() {
-    printf '{ "name": "meeting", "version": "1.2.3" }\n' > "$work/plugin.json"
-    local got
-    got=$(PATH="$path_with_jq" bash "$repo/scripts/release-version.sh" v1.2.3 "$work/plugin.json") || return 1
-    [ "$got" = "1.2.3" ] || { echo "получено: $got"; return 1; }
+    local version got
+    for version in 1.2.3 1.2.3-rc.1; do
+        printf '{\n  "name": "meeting",\n  "version": "%s",\n  "keywords": ["x"]\n}\n' "$version" > "$work/plugin.json"
+        got=$(bash "$repo/scripts/release-version.sh" "v$version" "$work/plugin.json") || return 1
+        [ "$got" = "$version" ] || { echo "получено: $got"; return 1; }
+    done
 }
 
 release_WhenPluginVersionDiffers_Refuses() {
     printf '{ "name": "meeting", "version": "1.2.2" }\n' > "$work/plugin.json"
-    if PATH="$path_with_jq" bash "$repo/scripts/release-version.sh" v1.2.3 "$work/plugin.json" > /dev/null 2>&1; then
+    if bash "$repo/scripts/release-version.sh" v1.2.3 "$work/plugin.json" > /dev/null 2> "$work/release.err"; then
         echo "отказа нет"
         return 1
     fi
+    grep -q 'не совпадает' "$work/release.err" || { cat "$work/release.err"; return 1; }
+}
+
+# Так шаг выпуска зовёт CI: без второго аргумента, манифест — плагин репозитория.
+release_WhenManifestNotGiven_ReadsRepositoryPlugin() {
+    local version got
+    version=$(grep -oE '"version": *"[^"]+"' "$repo/plugins/meeting/.claude-plugin/plugin.json" | grep -oE '[0-9][^"]*')
+    got=$(cd "$work" && bash "$repo/scripts/release-version.sh" "v$version") || return 1
+    [ "$got" = "$version" ] || { echo "получено: $got"; return 1; }
+}
+
+release_WhenManifestMissing_RefusesNamingIt() {
+    if bash "$repo/scripts/release-version.sh" v1.2.3 "$work/нет.json" > /dev/null 2> "$work/release.err"; then
+        echo "отказа нет"
+        return 1
+    fi
+    grep -q 'Нет манифеста' "$work/release.err" || { cat "$work/release.err"; return 1; }
+}
+
+release_WhenPluginHasNoVersion_RefusesAsMismatch() {
+    printf '{ "name": "meeting" }\n' > "$work/plugin.json"
+    if bash "$repo/scripts/release-version.sh" v1.2.3 "$work/plugin.json" > /dev/null 2> "$work/release.err"; then
+        echo "отказа нет"
+        return 1
+    fi
+    grep -q 'не совпадает' "$work/release.err" || { cat "$work/release.err"; return 1; }
 }
 
 release_WhenTagIsNotVersion_Refuses() {
     printf '{ "name": "meeting", "version": "1.2.3" }\n' > "$work/plugin.json"
     local tag
     for tag in 1.2.3 v1.2 release-1.2.3; do
-        if PATH="$path_with_jq" bash "$repo/scripts/release-version.sh" "$tag" "$work/plugin.json" > /dev/null 2>&1; then
+        if bash "$repo/scripts/release-version.sh" "$tag" "$work/plugin.json" > /dev/null 2>&1; then
             echo "отказа нет: $tag"
             return 1
         fi
