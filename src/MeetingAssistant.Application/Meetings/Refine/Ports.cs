@@ -28,15 +28,28 @@ public interface IRecordedMeetings
 public interface IRefineRecognizer
 {
     /// <summary>
-    /// Готовит модель до первой фразы: кладёт на место, если её нет; отказ — модель не получена.
+    /// Сколько звука распознаётся за ту же цену, что и меньший кусок: столько речи стоит подавать за вызов.
+    /// </summary>
+    TimeSpan Window { get; }
+
+    /// <summary>
+    /// Готовит модель до первого куска: кладёт на место, если её нет; отказ — модель не получена.
     /// </summary>
     Task<Result> Prepare(CancellationToken cancellationToken);
 
     /// <summary>
-    /// Распознаёт фразу целиком: 16 кГц, моно, float.
+    /// Распознаёт кусок звука (16 кГц, моно, float) в отрезки текста со временем от начала куска.
     /// </summary>
-    Task<string> Recognize(ReadOnlyMemory<float> samples, CancellationToken cancellationToken);
+    Task<IReadOnlyList<RecognizedSegment>> Recognize(ReadOnlyMemory<float> samples, CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// Отрезок распознанного текста.
+/// </summary>
+/// <param name="Start">Начало от начала куска.</param>
+/// <param name="End">Конец от начала куска.</param>
+/// <param name="Text">Текст; пустой — отрезок без речи.</param>
+public sealed record RecognizedSegment(TimeSpan Start, TimeSpan End, string Text);
 
 /// <summary>
 /// Второй транскрипт встречи.

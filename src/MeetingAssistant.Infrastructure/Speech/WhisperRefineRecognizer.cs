@@ -1,4 +1,3 @@
-using System.Text;
 using MeetingAssistant.Application.Meetings.Refine;
 using MeetingAssistant.SharedKernel;
 using Whisper.net;
@@ -6,10 +5,11 @@ using Whisper.net;
 namespace MeetingAssistant.Infrastructure.Speech;
 
 /// <summary>
-/// Whisper через Whisper.net: русский, фраза без контекста предыдущей, половина логических процессоров.
+/// Whisper через Whisper.net: русский, кусок без контекста предыдущего, половина логических процессоров.
 /// </summary>
 /// <remarks>
-/// Так turbo мерили (<c>docs/measurements.md</c>). Модель грузится в <see cref="Prepare"/>, а не в конструкторе:
+/// Без контекста — опора на прошлый вывод уводит модель в петлю повторов на записи с провалами. Модель грузится
+/// в <see cref="Prepare"/>, а не в конструкторе:
 /// сначала проверяется встреча, и отказ по ней не ждёт загрузки 574 МБ. Вызывается одним потоком сценария.
 /// </remarks>
 internal sealed class WhisperRefineRecognizer(WhisperModelFile modelFile) : IRefineRecognizer, IAsyncDisposable
@@ -20,6 +20,11 @@ internal sealed class WhisperRefineRecognizer(WhisperModelFile modelFile) : IRef
     private WhisperProcessor? _processor;
 
     public static int Threads => Math.Max(1, Environment.ProcessorCount / 2);
+
+    /// <summary>
+    /// Окно кодировщика Whisper: кусок короче всё равно считается как 30 с.
+    /// </summary>
+    public TimeSpan Window => TimeSpan.FromSeconds(30);
 
     public async Task<Result> Prepare(CancellationToken cancellationToken)
     {
@@ -40,18 +45,20 @@ internal sealed class WhisperRefineRecognizer(WhisperModelFile modelFile) : IRef
         return Result.Success();
     }
 
-    public async Task<string> Recognize(ReadOnlyMemory<float> samples, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<RecognizedSegment>> Recognize(
+        ReadOnlyMemory<float> samples,
+        CancellationToken cancellationToken)
     {
         WhisperProcessor processor = _processor
             ?? throw new InvalidOperationException("Модель Whisper не подготовлена: сначала Prepare.");
-        var text = new StringBuilder();
+        var segments = new List<RecognizedSegment>();
 
         await foreach (SegmentData segment in processor.ProcessAsync(samples, cancellationToken))
         {
-            text.Append(segment.Text);
+            segments.Add(new RecognizedSegment(segment.Start, segment.End, segment.Text.Trim()));
         }
 
-        return text.ToString().Trim();
+        return segments;
     }
 
     public async ValueTask DisposeAsync()

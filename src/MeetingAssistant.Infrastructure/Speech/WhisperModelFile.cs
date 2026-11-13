@@ -16,6 +16,15 @@ internal sealed record WhisperModelSource(string FileName, Uri Source, string Sh
         "ggml-large-v3-turbo-q5_0.bin",
         new Uri("https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q5_0.bin"),
         "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2");
+
+    /// <summary>
+    /// Общий каталог моделей Whisper пользователя (<c>%LOCALAPPDATA%\Models\whisper</c>): файл в 574 МБ лежит одной
+    /// копией для всех программ, которые его читают, и не удаляется вместе с приложением.
+    /// </summary>
+    public static string SharedDirectory { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Models",
+        "whisper");
 }
 
 /// <summary>
@@ -34,7 +43,8 @@ internal sealed partial class WhisperModelFile(
     public const string DraftSuffix = ".part";
 
     private const int ReportEveryPercent = 10;
-    private const double BytesPerMegabyte = 1024 * 1024;
+    // Десятичные мегабайты — как размер модели в доках и на Hugging Face (574 МБ).
+    private const double BytesPerMegabyte = 1_000_000;
 
     private readonly string _directory = System.IO.Path.GetFullPath(modelsDirectory);
 

@@ -44,7 +44,7 @@ public static class DependencyInjection
         services.AddSingleton<IRecordedMeetings, RecordedMeetingFolder>();
         services.AddSingleton<IRefinedTranscripts, RefinedTranscriptFiles>();
         services.AddSingleton(provider => new WhisperModelFile(
-            provider.GetRequiredService<IOptions<SpeechOptions>>().Value.ModelsDirectory,
+            WhisperModelSource.SharedDirectory,
             WhisperModelSource.Turbo,
             // Модель — сотни мегабайт: умолчание HttpClient (100 с) оборвало бы загрузку.
             new HttpClient { Timeout = Timeout.InfiniteTimeSpan },
