@@ -39,6 +39,8 @@ if glossary:
 t0 = time.perf_counter()
 rec = sherpa_onnx.OfflineRecognizer.from_transducer(**config)
 load = time.perf_counter() - t0
+if glossary:
+    os.unlink(hotwords.name)  # hotwords разобраны при создании распознавателя
 meta = json.load(open(os.path.join(seg_dir, "segments.json")))
 lines, speech, total = [], 0.0, 0.0
 for m in meta:

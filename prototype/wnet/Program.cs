@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 using Whisper.net;
 
-// args: <segdir> <model> <out> <threads> [prompt]
+// args: <segdir> <model> <out> <threads> [prompt]; GLUE=1 — куски до 30 с, как в meeting refine
 var segDir = args[0];
 var threads = int.Parse(args[3], CultureInfo.InvariantCulture);
 var prompt = args.Length > 4 ? args[4] : null;
@@ -22,20 +22,52 @@ var lines = new List<string>();
 var per = new List<double>();
 double speech = 0;
 sw.Restart();
+// GLUE=1 — как `meeting refine`: подряд идущие фразы кусками, пока речь куска не больше окна Whisper (30 с).
+var glue = Environment.GetEnvironmentVariable("GLUE") == "1";
+var groups = new List<List<JsonElement>>();
+double groupSpeech = 0;
 foreach (var m in meta.EnumerateArray())
 {
-    var i = m.GetProperty("i").GetInt32();
-    speech += m.GetProperty("len").GetDouble();
-    var one = Stopwatch.StartNew();
-    await using var fs = File.OpenRead(Path.Combine(segDir, $"{i:0000}.wav"));
-    var text = new List<string>();
-    await foreach (var s in processor.ProcessAsync(fs))
+    var len = m.GetProperty("len").GetDouble();
+    speech += len;
+    if (groups.Count == 0 || !glue || groupSpeech + len > 30)
     {
-        text.Add(s.Text.Trim());
+        groups.Add([]);
+        groupSpeech = 0;
+    }
+
+    groups[^1].Add(m);
+    groupSpeech += len;
+}
+
+foreach (var group in groups)
+{
+    var one = Stopwatch.StartNew();
+    var text = new List<string>();
+    if (glue)
+    {
+        // Фразы из bench.py — WAV PCM 16 моно 16 кГц с заголовком 44 байта.
+        var samples = group
+            .SelectMany(m => File.ReadAllBytes(Path.Combine(segDir, $"{m.GetProperty("i").GetInt32():0000}.wav"))[44..]
+                .Chunk(2)
+                .Select(b => BitConverter.ToInt16(b) / 32768f))
+            .ToArray();
+        await foreach (var s in processor.ProcessAsync(samples))
+        {
+            text.Add(s.Text.Trim());
+        }
+    }
+    else
+    {
+        await using var fs = File.OpenRead(Path.Combine(segDir, $"{group[0].GetProperty("i").GetInt32():0000}.wav"));
+        await foreach (var s in processor.ProcessAsync(fs))
+        {
+            text.Add(s.Text.Trim());
+        }
     }
 
     per.Add(one.Elapsed.TotalSeconds);
-    lines.Add($"[{m.GetProperty("start").GetDouble(),7:F1}] {string.Join(' ', text)}");
+    lines.Add($"[{group[0].GetProperty("start").GetDouble(),7:F1}] {string.Join(' ', text)}");
 }
 var total = sw.Elapsed.TotalSeconds;
 per.Sort();

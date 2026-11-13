@@ -19,7 +19,8 @@ uv venv -q -p 3.12 .venv && uv pip install -q -p .venv sherpa-onnx==2.0.1 numpy
   прошлых замеров.
 - `delta.sh` — новые строки транскрипта с прошлого вызова (смещение в `live/.offset`).
 - `hint.sh <epoch события> <текст|SKIP>` — фиксирует подсказку и задержку от события в `live/hints.md`.
-- `wnet/` — Whisper.net 1.9.1 по фразам из `seg/`: `dotnet run -c Release -- <seg/имя> <ggml-модель> <выход> <потоки> [prompt]`.
+- `wnet/` — Whisper.net 1.9.1 по фразам из `seg/`: `dotnet run -c Release -- <seg/имя> <ggml-модель> <выход> <потоки> [prompt]`;
+  `GLUE=1` — подряд идущие фразы кусками до 30 с, как `meeting refine`.
 - `rnnt.py <seg/имя> <выход> <greedy|beam> [словарь] [сила]` — GigaAM v3 RNNT с пунктуацией по фразам из `seg/`;
   со словарём — hotwords (только `beam`). Потоки — `THREADS` (8).
 - `spm2vocab.py <tokenizer.model> > <bpe.vocab>` — словарь токенизатора GigaAM для hotwords (`docs/measurements.md`,
