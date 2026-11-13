@@ -53,8 +53,9 @@ $meeting = Join-Path $env:LOCALAPPDATA "MeetingAssistant\app\meeting.exe"
 if (-not (Test-Path $meeting)) { [Console]::Error.WriteLine("Приложение записи не установлено: нет $meeting. Поставить — meeting-install."); exit 3 }
 $command = "`"$meeting`" start `"$env:MEETING_START_NAME`""
 if ($env:MEETING_START_GLOSSARY) { $command += " --glossary `"$env:MEETING_START_GLOSSARY`"" }
-# Через cmd /c и pause при отказе: окно, в котором meeting сразу отказал, не закрывается, и причину видно.
-Start-Process -FilePath cmd.exe -ArgumentList "/c `"$command || pause`"" -WorkingDirectory $env:USERPROFILE
+# Через cmd /c и pause всегда: окно не закрывается ни при отказе (видна причина), ни после Ctrl+C (виден итог —
+# строки, события, CPU и пик памяти встречи есть только в нём).
+Start-Process -FilePath cmd.exe -ArgumentList "/c `"$command & pause`"" -WorkingDirectory $env:USERPROFILE
 ' && opened=0 || opened=$?
 # Код 3 — приложение записи не установлено: скилл по нему предлагает установку.
 [ "$opened" -ne 3 ] || exit 3
