@@ -34,7 +34,7 @@ internal sealed class HoldingDetector : IVoiceActivityDetector
     /// <summary>
     /// Кусок, заполненный этим значением, — пауза: фразой не становится и закрывает удержанную.
     /// </summary>
-    public const float PauseSample = -1f;
+    public const float PauseSample = float.NegativeInfinity;
 
     private long _position;
     private DetectedPhrase? _held;
@@ -46,7 +46,7 @@ internal sealed class HoldingDetector : IVoiceActivityDetector
     public IReadOnlyList<DetectedPhrase> Accept(ReadOnlyMemory<float> samples)
     {
         DetectedPhrase? previous = _held;
-        bool pause = samples.Length > 0 && samples.Span[0] == PauseSample;
+        bool pause = samples.Length > 0 && float.IsNegativeInfinity(samples.Span[0]);
         _held = pause ? null : new DetectedPhrase(SpeechAudio.Duration(_position), samples);
         _position += samples.Length;
         return previous is null ? [] : [previous];

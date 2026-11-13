@@ -720,6 +720,15 @@ models_WhenChecksumsListedTwice_TheyMatch() {
     done
 }
 
+models_WhenWhisperFileNamedInThreePlaces_NamesMatch() {
+    local code ps refine
+    code=$(grep -oP 'WhisperFile = "\K[^"]+' "$repo/src/MeetingAssistant.Infrastructure/Speech/SpeechOptions.cs")
+    ps=$(grep -oP "^\\\$whisperFile = '\K[^']+" "$repo/scripts/install.ps1")
+    refine=$(grep -oP '"\K[^"]+\.bin(?=")' "$repo/plugins/meeting/skills/meeting/scripts/meeting-refine")
+    [ -n "$code" ] && [ "$code" = "$ps" ] && [ "$code" = "$refine" ] ||
+        { echo "SpeechModels '$code', install.ps1 '$ps', meeting-refine '$refine'"; return 1; }
+}
+
 release_WhenPluginVersionMatchesTag_PrintsVersion() {
     printf '{ "name": "meeting", "version": "1.2.3" }\n' > "$work/plugin.json"
     local got

@@ -22,18 +22,13 @@ internal static class Models
     /// <summary>
     /// Whisper tiny: проверяет связку с Whisper.net, а не качество.
     /// </summary>
-    public static WhisperModelSource WhisperTiny { get; } = new(
-        "ggml-tiny.bin",
-        new Uri("https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-tiny.bin"),
-        "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21");
+    public static string WhisperTiny => Path.Combine(Directory, "ggml-tiny.bin");
 
     public static void EnsureWhisperTinyPresent()
     {
-        string path = Path.Combine(Directory, WhisperTiny.FileName);
-
-        if (!File.Exists(path))
+        if (!File.Exists(WhisperTiny))
         {
-            Assert.Fail($"Нет модели {path}.\n{SpeechModels.DownloadHint}");
+            Assert.Fail($"Нет модели {WhisperTiny}.\n{SpeechModels.DownloadHint}");
         }
     }
 

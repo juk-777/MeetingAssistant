@@ -38,6 +38,13 @@ internal static class SpeechModels
     public static string RecognizerTokens(string modelsDirectory) =>
         Path.Combine(Path.GetFullPath(modelsDirectory), RecognizerDirectory, RecognizerTokensFile);
 
+    /// <summary>
+    /// Whisper turbo — только для уточнения встречи: без него запись идёт, поэтому на старте он не проверяется.
+    /// </summary>
+    public static string Whisper(string modelsDirectory) => Path.Combine(Path.GetFullPath(modelsDirectory), WhisperFile);
+
+    public const string WhisperFile = "ggml-large-v3-turbo-q5_0.bin";
+
     public static IReadOnlyList<string> Missing(string modelsDirectory) =>
     [
         .. new[] { Vad(modelsDirectory), RecognizerModel(modelsDirectory), RecognizerTokens(modelsDirectory) }

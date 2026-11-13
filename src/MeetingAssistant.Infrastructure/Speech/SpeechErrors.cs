@@ -3,18 +3,12 @@ using MeetingAssistant.SharedKernel;
 namespace MeetingAssistant.Infrastructure.Speech;
 
 /// <summary>
-/// Отказы распознавания: модель не получена.
+/// Отказы распознавания.
 /// </summary>
 public static class SpeechErrors
 {
-    public const string ModelDownloadFailedCode = "Speech.ModelDownloadFailed";
-    public const string ModelChecksumMismatchCode = "Speech.ModelChecksumMismatch";
+    public const string ModelMissingCode = "Speech.ModelMissing";
 
-    public static Error ModelDownloadFailed(Uri source, string reason) =>
-        new(ModelDownloadFailedCode, $"Модель не скачалась ({source}): {reason}. Повторите — загрузка начнётся заново.");
-
-    public static Error ModelChecksumMismatch(Uri source) =>
-        new(
-            ModelChecksumMismatchCode,
-            $"Контрольная сумма модели ({source}) не совпала: файл повреждён или подменён, на место он не положен.");
+    public static Error ModelMissing(string path) =>
+        new(ModelMissingCode, $"Нет модели {path}.\n{SpeechModels.DownloadHint}");
 }

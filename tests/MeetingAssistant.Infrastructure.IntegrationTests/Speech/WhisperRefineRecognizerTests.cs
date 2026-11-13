@@ -2,7 +2,6 @@ using MeetingAssistant.Application.Meetings.Recording;
 using MeetingAssistant.Application.Meetings.Refine;
 using MeetingAssistant.Infrastructure.Speech;
 using MeetingAssistant.SharedKernel;
-using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 
 namespace MeetingAssistant.Infrastructure.IntegrationTests.Speech;
@@ -18,7 +17,7 @@ public sealed class WhisperRefineRecognizerTests
     public async Task Recognize_WhenPreparedAndExampleSpeech_ReturnsRussianSegmentsWithinTheSpeech()
     {
         Models.EnsureWhisperTinyPresent();
-        await using var recognizer = new WhisperRefineRecognizer(ModelFile());
+        await using var recognizer = new WhisperRefineRecognizer(Models.WhisperTiny);
         float[] example = Models.ReadExample();
 
         Result prepared = await recognizer.Prepare(Token);
@@ -35,14 +34,20 @@ public sealed class WhisperRefineRecognizerTests
     }
 
     [Fact]
+    public async Task Prepare_WhenModelMissing_RefusesAsModelMissing()
+    {
+        await using var recognizer = new WhisperRefineRecognizer(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.bin"));
+
+        Result prepared = await recognizer.Prepare(Token);
+
+        prepared.Error.Code.ShouldBe(SpeechErrors.ModelMissingCode);
+    }
+
+    [Fact]
     public async Task Recognize_WhenNotPrepared_Throws()
     {
-        await using var recognizer = new WhisperRefineRecognizer(ModelFile());
+        await using var recognizer = new WhisperRefineRecognizer(Models.WhisperTiny);
 
         await Should.ThrowAsync<InvalidOperationException>(recognizer.Recognize(new float[16_000], Token));
     }
-
-    // Модель на месте: загрузки нет, клиент не нужен.
-    private static WhisperModelFile ModelFile() =>
-        new(Models.Directory, Models.WhisperTiny, new HttpClient(), NullLogger<WhisperModelFile>.Instance);
 }

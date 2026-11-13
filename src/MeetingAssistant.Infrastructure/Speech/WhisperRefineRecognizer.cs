@@ -8,11 +8,11 @@ namespace MeetingAssistant.Infrastructure.Speech;
 /// Whisper через Whisper.net: русский, кусок без контекста предыдущего, половина логических процессоров.
 /// </summary>
 /// <remarks>
-/// Без контекста — опора на прошлый вывод уводит модель в петлю повторов на записи с провалами. Модель грузится
-/// в <see cref="Prepare"/>, а не в конструкторе:
-/// сначала проверяется встреча, и отказ по ней не ждёт загрузки 574 МБ. Вызывается одним потоком сценария.
+/// Без контекста — опора на прошлый вывод уводит модель в петлю повторов на записи с провалами. Модель ставит
+/// установка рядом с остальными; грузится она в <see cref="Prepare"/>, а не в конструкторе: сначала проверяется
+/// встреча, и отказ по ней не ждёт загрузки 574 МБ. Вызывается одним потоком сценария.
 /// </remarks>
-internal sealed class WhisperRefineRecognizer(WhisperModelFile modelFile) : IRefineRecognizer, IAsyncDisposable
+internal sealed class WhisperRefineRecognizer(string modelPath) : IRefineRecognizer, IAsyncDisposable
 {
     public const string Language = "ru";
 
@@ -26,23 +26,26 @@ internal sealed class WhisperRefineRecognizer(WhisperModelFile modelFile) : IRef
     /// </summary>
     public TimeSpan Window => TimeSpan.FromSeconds(30);
 
-    public async Task<Result> Prepare(CancellationToken cancellationToken)
+    public Task<Result> Prepare(CancellationToken cancellationToken)
     {
-        Result ensured = await modelFile.Ensure(cancellationToken);
-
-        if (ensured.IsFailure || _processor is not null)
+        if (_processor is not null)
         {
-            return ensured;
+            return Task.FromResult(Result.Success());
         }
 
-        _factory = WhisperFactory.FromPath(modelFile.Path);
+        if (!File.Exists(modelPath))
+        {
+            return Task.FromResult(Result.Failure(SpeechErrors.ModelMissing(modelPath)));
+        }
+
+        _factory = WhisperFactory.FromPath(modelPath);
         _processor = _factory.CreateBuilder()
             .WithLanguage(Language)
             .WithNoContext()
             .WithThreads(Threads)
             .Build();
 
-        return Result.Success();
+        return Task.FromResult(Result.Success());
     }
 
     public async Task<IReadOnlyList<RecognizedSegment>> Recognize(
