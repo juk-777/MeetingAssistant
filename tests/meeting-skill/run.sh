@@ -1081,6 +1081,22 @@ release_WhenPluginVersionDiffers_Refuses() {
     grep -q 'не совпадает' "$work/release.err" || { cat "$work/release.err"; return 1; }
 }
 
+# Так шаг выпуска зовёт CI: без второго аргумента, манифест — плагин репозитория.
+release_WhenManifestNotGiven_ReadsRepositoryPlugin() {
+    local version got
+    version=$(grep -oE '"version": *"[^"]+"' "$repo/plugins/meeting/.claude-plugin/plugin.json" | grep -oE '[0-9][^"]*')
+    got=$(cd "$work" && bash "$repo/scripts/release-version.sh" "v$version") || return 1
+    [ "$got" = "$version" ] || { echo "получено: $got"; return 1; }
+}
+
+release_WhenManifestMissing_RefusesNamingIt() {
+    if bash "$repo/scripts/release-version.sh" v1.2.3 "$work/нет.json" > /dev/null 2> "$work/release.err"; then
+        echo "отказа нет"
+        return 1
+    fi
+    grep -q 'Нет манифеста' "$work/release.err" || { cat "$work/release.err"; return 1; }
+}
+
 release_WhenPluginHasNoVersion_RefusesAsMismatch() {
     printf '{ "name": "meeting" }\n' > "$work/plugin.json"
     if bash "$repo/scripts/release-version.sh" v1.2.3 "$work/plugin.json" > /dev/null 2> "$work/release.err"; then
