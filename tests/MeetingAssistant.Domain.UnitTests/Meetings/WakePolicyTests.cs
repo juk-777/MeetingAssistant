@@ -16,6 +16,7 @@ public sealed class WakePolicyTests
     [Theory]
     [InlineData("Агент, подскажи, где это решение")]
     [InlineData("а что скажет агент")]
+    [InlineData("слушай, агент, где это решение")]
     [InlineData("АГЕНТ, проверь")]
     public void Evaluate_WhenAddressWordPresent_ReturnsAddress(string text)
     {
