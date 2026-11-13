@@ -1,0 +1,45 @@
+"""Счёт по выводам распознавания для замера словаря: слова, термины словаря, повторы подряд.
+
+Запуск: python glossary_check.py <словарь> <вывод>... [--hits]. Вывод — строки «[начало] текст» (bench.py,
+rnnt.py, wnet). Термин ищется подстрокой без учёта регистра, пробелы и дефисы не в счёт: «lock» найдётся и
+в «unlock», «pod» — в «podcast». Счёт — кандидаты, вставка подтверждается чтением строки (--hits). Повтор —
+серия из трёх и больше одинаковых слов подряд или строка, совпавшая с предыдущей; повтор фразы из нескольких
+слов («как это работает, как это работает») не ловится. --hits печатает каждое найденное вхождение: начало
+строки и термин.
+"""
+import re
+import sys
+
+args = [a for a in sys.argv[1:] if a != "--hits"]
+show_hits = "--hits" in sys.argv
+terms = sorted({line.strip() for line in open(args[0], encoding="utf-8") if line.strip()}, key=len, reverse=True)
+
+
+def squash(text):
+    return re.sub(r"[\s\-]", "", text.lower())
+
+
+for path in args[1:]:
+    words = hits = repeats = 0
+    found = []
+    previous = None
+    for line in open(path, encoding="utf-8"):
+        start, _, text = line.partition("] ")
+        words += len(text.split())
+        flat = squash(text)
+        for term in terms:  # длинные первыми: «readiness probe» не считается ещё и «readiness»
+            key = squash(term)
+            count = flat.count(key)
+            if count:
+                hits += count
+                found += [(start.strip("[ "), term)] * count
+                flat = flat.replace(key, "\0")
+        tokens = re.findall(r"\w+", text.lower())
+        repeats += sum(1 for i in range(2, len(tokens))
+                       if tokens[i] == tokens[i - 1] == tokens[i - 2] and (i == 2 or tokens[i - 3] != tokens[i]))
+        repeats += text.strip() != "" and text.strip() == previous
+        previous = text.strip()
+    print(f"{path}: слов {words}, терминов словаря {hits}, повторов {repeats}")
+    if show_hits:
+        for start, term in found:
+            print(f"  [{start}] {term}")
