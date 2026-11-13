@@ -31,7 +31,7 @@ internal sealed class ConsoleRefineProgress : IProgress<RefinePosition>
         Console.WriteLine(string.Create(
             CultureInfo.InvariantCulture,
             $"[{Clock(value.Position)} из {Clock(value.Duration)}] {Percent(value):F0} %, строк {value.Utterances}, " +
-            $"прошло {Clock(value.Elapsed)}, осталось ≈ {Clock(Remaining(value))}"));
+            $"прошло {Clock(value.Elapsed)}, осталось около {Clock(Remaining(value))}"));
     }
 
     public string Summary()
