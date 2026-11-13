@@ -3,12 +3,13 @@
 Запуск: python openstt.py <часть>, например asr_calls_2_val. Архив <часть>.tar.gz лежит в samples/openstt/
 (ссылка — prototype/README.md), распаковывается рядом при первом запуске.
 
-Фразы части перемешиваются с зерном 35 и берутся по порядку, пока речь не наберёт 3600 с. Выход:
-- seg/openstt-<часть>/ — отрезки VAD каждой фразы, формат bench.py (его читают ctc.py, rnnt.py, wnet); в
-  segments.json у отрезка — номер фразы в выборке (clip), начало — от начала выборки, фразы подряд;
+Фразы части перемешиваются с зерном 35 и берутся по порядку, пока их длина не наберёт 3600 с. Выход:
+- seg/openstt-<часть>/ — отрезки VAD потока фраз через секунду тишины, формат bench.py (его читают ctc.py, rnnt.py,
+  wnet); в segments.json у отрезка — начало в потоке и номера фраз выборки, на которые он пришёлся (clip, last);
 - seg/openstt-<часть>-whole/ — фраза целиком одним отрезком: контроль потерь на VAD;
 - в обоих clips.json — фразы выборки: путь в части, длина, эталон.
 """
+import bisect
 import json
 import os
 import random
@@ -52,21 +53,6 @@ vad = sherpa_onnx.VoiceActivityDetector(config, buffer_size_in_seconds=120)
 window = config.silero_vad.window_size
 
 
-def cut(audio):
-    vad.reset()
-    found = []
-    for i in range(0, len(audio), window):
-        vad.accept_waveform(audio[i:i + window])
-        while not vad.empty():
-            found.append((vad.front.start, np.array(vad.front.samples, dtype=np.float32)))
-            vad.pop()
-    vad.flush()
-    while not vad.empty():
-        found.append((vad.front.start, np.array(vad.front.samples, dtype=np.float32)))
-        vad.pop()
-    return found
-
-
 def write(directory, k, samples):
     with wave.open(os.path.join(directory, f"{k:04d}.wav"), "wb") as w:
         w.setnchannels(1)
@@ -82,25 +68,51 @@ for directory in (seg_dir, whole_dir):
         sys.exit(f"Каталог уже есть: {directory} — удалите, чтобы собрать заново.")
     os.makedirs(directory)
 
-clips, segments, wholes, offset = [], [], [], 0.0
+# Фразы набора вырезаны впритык к речи, а Silero без паузы перед речью теряет её начало. Поэтому выборка идёт
+# в VAD одним потоком, как запись в приложении: фразы подряд, перед каждой и после последней — секунда тишины.
+pause = np.zeros(RATE, dtype=np.float32)
+clips, wholes, parts, duration, position = [], [], [], 0.0, 0
 for path in paths:
-    if offset >= 3600:
+    if duration >= 3600:
         break
     audio = read(path)
     reference = open(os.path.join(base, path[:-4] + ".txt"), encoding="utf-8").read().strip()
     clip = len(clips)
-    clips.append({"path": path, "len": len(audio) / RATE, "ref": reference})
+    position += len(pause)
+    clips.append({"path": path, "start": position / RATE, "len": len(audio) / RATE, "ref": reference})
     write(whole_dir, clip, audio)
-    wholes.append({"i": clip, "start": round(offset, 3), "len": len(audio) / RATE, "clip": clip})
-    for start, samples in cut(audio):
-        k = len(segments)
-        write(seg_dir, k, samples)
-        segments.append({"i": k, "start": round(offset + start / RATE, 3), "len": len(samples) / RATE, "clip": clip})
-    offset += len(audio) / RATE
+    wholes.append({"i": clip, "start": position / RATE, "len": len(audio) / RATE, "clip": clip, "last": clip})
+    parts += [pause, audio]
+    position += len(audio)
+    duration += len(audio) / RATE
+stream = np.concatenate(parts + [pause])
+
+found = []
+for i in range(0, len(stream), window):
+    vad.accept_waveform(stream[i:i + window])
+    while not vad.empty():
+        found.append((vad.front.start, np.array(vad.front.samples, dtype=np.float32)))
+        vad.pop()
+vad.flush()
+while not vad.empty():
+    found.append((vad.front.start, np.array(vad.front.samples, dtype=np.float32)))
+    vad.pop()
+
+# Отрезок VAD относится к фразам, на которые приходятся его начало (clip) и конец (last): Silero не всегда закрывает
+# отрезок на секунде цифровой тишины. Начало в паузе — у следующей за паузой фразы, конец в паузе — у предыдущей.
+clip_starts = [c["start"] for c in clips]
+segments = []
+for k, (start, samples) in enumerate(found):
+    begin, end = start / RATE, (start + len(samples)) / RATE
+    write(seg_dir, k, samples)
+    segments.append({"i": k, "start": round(begin, 3), "len": len(samples) / RATE,
+                     "clip": max(0, bisect.bisect_right(clip_starts, begin + len(pause) / RATE) - 1),
+                     "last": max(0, bisect.bisect_left(clip_starts, end) - 1)})
+spanning = sum(s["clip"] != s["last"] for s in segments)
 
 for directory, meta in ((seg_dir, segments), (whole_dir, wholes)):
     json.dump(meta, open(os.path.join(directory, "segments.json"), "w"), ensure_ascii=False, indent=1)
     json.dump(clips, open(os.path.join(directory, "clips.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 speech = sum(s["len"] for s in segments)
-print(f"[{part}] фраз {len(clips)} из {len(paths)}, {offset:.0f} с; отрезков VAD {len(segments)}, речи {speech:.0f} с; "
-      f"фраз без отрезков {len(clips) - len({s['clip'] for s in segments})}")
+print(f"[{part}] фраз {len(clips)} из {len(paths)}, {duration:.0f} с; отрезков VAD {len(segments)}, речи {speech:.0f} с; "
+      f"фраз без отрезков {len(clips) - len({s['clip'] for s in segments})}, отрезков через границу фраз {spanning}")

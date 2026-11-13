@@ -1,7 +1,8 @@
 """WER и CER вывода распознавания против эталона набора (`docs/measurements.md`, «Открытый набор»).
 
 Запуск: python wer.py <каталог seg> <вывод>... ; python wer.py --test — проверка счёта на известных входах.
-Каталог seg — от openstt.py: segments.json (отрезок VAD с номером фразы набора) и clips.json (фразы с эталоном).
+Каталог seg — от openstt.py: segments.json (отрезок VAD с номерами фраз набора, на которые он пришёлся) и
+clips.json (фразы с эталоном).
 Вывод — строки «[начало] текст» от ctc.py, rnnt.py или wnet; строка сопоставляется с отрезком по началу.
 Строка turbo с GLUE=1 — кусок из нескольких отрезков подряд, поэтому счёт идёт по единицам: фразы набора, которые
 накрыты одной строкой вывода, сливаются в одну единицу вместе с эталонами. Фраза без отрезков — пустая гипотеза.
@@ -61,7 +62,8 @@ def units(seg_dir, output):
     starts = [m["start"] for m in meta]
     lines = []
     for line in open(output, encoding="utf-8"):
-        head, _, text = line.rstrip("\n").partition("] ")
+        head, _, text = line.rstrip("\n").partition("]")
+        text = text.removeprefix(" ")
         if not head.startswith("["):
             continue
         at = float(head[1:])
@@ -72,7 +74,7 @@ def units(seg_dir, output):
     ranges = []
     for n, (k, text) in enumerate(lines):
         last = lines[n + 1][0] - 1 if n + 1 < len(lines) else len(meta) - 1
-        first_clip, last_clip = meta[k]["clip"], meta[last]["clip"]
+        first_clip, last_clip = meta[k]["clip"], max(m["last"] for m in meta[k:last + 1])
         if ranges and first_clip <= ranges[-1][1]:
             ranges[-1][1] = max(ranges[-1][1], last_clip)
             ranges[-1][2].append(text)
@@ -122,8 +124,10 @@ def test():
     # Фразы набора: 0 — два отрезка, 1 — один, 2 — без отрезков. Кусок turbo накрывает отрезки 0–1 фразы 0 и
     # фразу 1; строка вне сетки начал (0.05) всё равно ложится на ближайший отрезок.
     with tempfile.TemporaryDirectory() as seg_dir:
-        json.dump([{"i": 0, "start": 0.0, "len": 1, "clip": 0}, {"i": 1, "start": 1.5, "len": 1, "clip": 0},
-                   {"i": 2, "start": 3.0, "len": 1, "clip": 1}], open(os.path.join(seg_dir, "segments.json"), "w"))
+        segments = [{"i": 0, "start": 0.0, "len": 1, "clip": 0, "last": 0},
+                    {"i": 1, "start": 1.5, "len": 1, "clip": 0, "last": 0},
+                    {"i": 2, "start": 3.0, "len": 1, "clip": 1, "last": 1}]
+        json.dump(segments, open(os.path.join(seg_dir, "segments.json"), "w"))
         json.dump([{"ref": "первая фраза"}, {"ref": "вторая"}, {"ref": "третья"}],
                   open(os.path.join(seg_dir, "clips.json"), "w"), ensure_ascii=False)
         output = os.path.join(seg_dir, "out.txt")
@@ -138,6 +142,14 @@ def test():
         ok = got == [("первая фраза вторая", "Первая фраза. Вторая."), ("третья", "")]
         failed += not ok
         print(f"{'ок ' if ok else 'НЕТ'} фраза, разрезанная между кусками: {got}")
+        # Отрезок 2 начался во фразе 1 и захватил фразу 2: обе фразы — одна единица, а не пустая гипотеза у второй.
+        segments[2]["last"] = 2
+        json.dump(segments, open(os.path.join(seg_dir, "segments.json"), "w"))
+        open(output, "w", encoding="utf-8").write("[   0.0] Первая фраза\n[   1.5]\n[   3.0] Вторая. Третья.\n")
+        got = list(units(seg_dir, output))
+        ok = got == [("первая фраза", "Первая фраза "), ("вторая третья", "Вторая. Третья.")]
+        failed += not ok
+        print(f"{'ок ' if ok else 'НЕТ'} отрезок через границу фраз: {got}")
     return failed
 
 
