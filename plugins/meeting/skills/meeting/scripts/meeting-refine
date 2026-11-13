@@ -9,6 +9,8 @@
 #
 # Код 3 — приложение записи не установлено (нет корня встреч или meeting.exe) или поставлено без модели Whisper:
 # скилл предлагает meeting-install, она же обновляет установленное.
+# Код 4 — приложение старее плагина или его версию не распознать (check-app-version): скилл предлагает обновить его
+# тем же meeting-install.
 #
 # meeting-refine [каталог встречи]
 set -euo pipefail
@@ -29,6 +31,9 @@ grep -q $'\tконец записи$' "$dir/events.log" 2>/dev/null ||
     fail "Запись встречи $dir не закончена: в events.log нет «конец записи». Остановите запись (Ctrl+C в окне meeting) и повторите."
 
 window_dir=$(bash "$here/windows-path" "$dir")
+
+# Отказ сверки версии (коды 1, 3, 4) — выход с ним же, до окна.
+bash "$here/check-app-version"
 
 # Каталог — переменной окружения, а не в командной строке PowerShell: кавычки и кириллица не ломают команду.
 export MEETING_REFINE_DIR=$window_dir

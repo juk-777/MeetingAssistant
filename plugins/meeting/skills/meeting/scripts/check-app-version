@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Сверка версии приложения записи с версией плагина — meeting-start и meeting-refine зовут её до окна.
+#
+# Плагин и приложение обновляются разными командами: приложение, старее плагина, молча работало бы по старым
+# правилам. Версии — X.Y.Z, сравниваются покомпонентно числами. Сборка разработчика (-dev в конце) не сверяется.
+#
+# Код 4 — приложение старее плагина или его версию не распознать: скилл предлагает meeting-install.
+# Код 3 — приложение записи не установлено. Код 1 — версию не узнать (нет powershell.exe, meeting --version упал).
+# Без сверки: MEETING_ANY_APP_VERSION=1 (человек решил записывать на том, что стоит, или новее релиза нет), скилл
+# вне плагина (нет plugin.json — сравнивать не с чем) и версия плагина не X.Y.Z (предрелиз).
+#
+# check-app-version
+set -euo pipefail
+
+[ "${MEETING_ANY_APP_VERSION:-}" != 1 ] || exit 0
+
+# plugin.json — тремя каталогами выше скриптов. Путь открывает система: «..» после ссылки на каталог скилла
+# (install-skill.sh) ведёт в рабочую копию, а не туда, где лежит ссылка.
+here="$(cd "$(dirname "$0")" && pwd)"
+version_pattern='^([0-9]+)\.([0-9]+)\.([0-9]+)$'
+
+plugin=$(bash "$here/current-field" "$here/../../../.claude-plugin/plugin.json" version 2>/dev/null) || exit 0
+[[ $plugin =~ $version_pattern ]] || exit 0
+plugin_parts=("${BASH_REMATCH[@]:1}")
+
+command -v powershell.exe > /dev/null ||
+    { echo "Нет powershell.exe: приложение записи работает только под Windows (из WSL или Git Bash)." >&2; exit 1; }
+
+app=$(powershell.exe -NoProfile -NonInteractive -Command '
+$meeting = Join-Path $env:LOCALAPPDATA "MeetingAssistant\app\meeting.exe"
+if (-not (Test-Path $meeting)) { [Console]::Error.WriteLine("Приложение записи не установлено: нет $meeting. Поставить — meeting-install."); exit 3 }
+& $meeting --version
+exit $LASTEXITCODE
+') && asked=0 || asked=$?
+[ "$asked" -ne 3 ] || exit 3
+[ "$asked" -eq 0 ] || { echo "Версию приложения записи не узнать: meeting --version вышел с кодом $asked." >&2; exit 1; }
+app=${app//$'\r'/}
+
+[[ $app != *-dev ]] || exit 0
+
+older() {
+    echo "$1 Обновить — meeting-install." >&2
+    exit 4
+}
+
+[[ $app =~ $version_pattern ]] || older "Версию приложения записи не распознать («$app»), скилл — $plugin."
+app_parts=("${BASH_REMATCH[@]:1}")
+for i in 0 1 2; do
+    a=$((10#${app_parts[i]}))
+    p=$((10#${plugin_parts[i]}))
+    [ "$a" -eq "$p" ] && continue
+    [ "$a" -gt "$p" ] && exit 0
+    older "Приложение записи $app старее скилла $plugin."
+done
