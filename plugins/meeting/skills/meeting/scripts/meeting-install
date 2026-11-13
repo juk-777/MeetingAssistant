@@ -14,6 +14,9 @@ command -v powershell.exe > /dev/null ||
 
 export MEETING_RELEASES=${MEETING_RELEASES:-https://github.com/juk-777/MeetingAssistant/releases}
 export WSLENV="${WSLENV:+$WSLENV:}MEETING_RELEASES"
+# Git Bash переделывает похожие на путь значения переменных, когда запускает программу Windows: адрес релизов —
+# как есть, как во всех скриптах скилла.
+export MSYS2_ENV_CONV_EXCL="${MSYS2_ENV_CONV_EXCL:+$MSYS2_ENV_CONV_EXCL;}MEETING_"
 
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command '
 $ErrorActionPreference = "Stop"

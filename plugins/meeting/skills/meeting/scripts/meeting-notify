@@ -22,6 +22,9 @@ command -v powershell.exe > /dev/null || exit 0
 text=${1//$'\r'/}
 export MEETING_NOTIFY_TEXT=${text//$'\n'/ }
 export WSLENV="${WSLENV:+$WSLENV:}MEETING_NOTIFY_TEXT"
+# Git Bash переделывает похожие на путь значения переменных (/x → C:/Program Files/Git/x), когда запускает программу
+# Windows: подсказка «/api/… вернул 500» дошла бы искажённой. Переменные MEETING_* — как есть.
+export MSYS2_ENV_CONV_EXCL="${MSYS2_ENV_CONV_EXCL:+$MSYS2_ENV_CONV_EXCL;}MEETING_"
 
 # Уведомление показывается от имени приложения из меню «Пуск»; Windows PowerShell есть в любой Windows.
 powershell.exe -NoProfile -NonInteractive -Command '

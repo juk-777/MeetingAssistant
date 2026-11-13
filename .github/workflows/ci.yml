@@ -35,3 +35,16 @@ jobs:
 
       - name: Тесты
         run: ./scripts/test.sh
+
+  # Скилл /meeting в Claude Code для Windows идёт в Git Bash: те же тесты скилла в нём.
+  skill-git-bash:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Тесты скилла в Git Bash
+        run: bash tests/meeting-skill/run.sh

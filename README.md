@@ -41,19 +41,22 @@ powershell.exe -c 'iwr https://github.com/juk-777/MeetingAssistant/releases/late
 
 ### Скилл `/meeting`
 
-В Claude Code, запущенном в WSL (нужен `jq`: `sudo apt install jq`):
+В Claude Code — в WSL или прямо в Windows:
 
 ```
 /plugin marketplace add juk-777/MeetingAssistant
 /plugin install meeting@meeting-assistant
 ```
 
-Приложение записи ещё не стоит — `/meeting start` предложит поставить его сам. Claude Code прямо в Windows, без WSL,
-со скиллом пока не проверялся ([#15](https://github.com/juk-777/MeetingAssistant/issues/15)).
+Claude Code прямо в Windows нужен Git for Windows: скрипты скилла — bash, их выполняет Git Bash, и без него
+у Claude Code нет `Monitor`, на котором держатся подсказки. Плагины у Claude Code в WSL и в Windows свои — ставить
+в том, где идёт работа.
+
+Приложение записи ещё не стоит — `/meeting start` предложит поставить его сам.
 
 ### Из исходников
 
-В WSL — нужны .NET SDK 10, git, curl, python3, jq; клон в любом каталоге:
+В WSL — нужны .NET SDK 10, git, curl, python3 и jq (шаг выпуска и его тесты); клон в любом каталоге:
 
 ```bash
 git clone https://github.com/juk-777/MeetingAssistant.git && cd MeetingAssistant
@@ -71,7 +74,8 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -FromSource
 
 Обе сборки из исходников ставят модели так же, как установка из релиза; `-FromSource` берёт их из `models/`
 репозитория, если они там есть. Ссылка `install-skill.sh` вместо плагина: правка скилла в рабочей копии видна
-сразу. Порядок разработки — `docs/development.md`.
+сразу. В Claude Code для Windows скилл из рабочей копии — `claude --plugin-dir plugins/meeting`. Порядок
+разработки — `docs/development.md`.
 
 ## Как пользоваться
 

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Тесты скриптов скилла /meeting на синтетических файлах встречи во временном каталоге.
 #
-# Запускается из scripts/test.sh вместе с тестовыми приложениями .NET; итог — строка «итого: N, упало: M».
+# Запускается из scripts/test.sh вместе с тестовыми приложениями .NET; итог — строка «итого: N, упало: M,
+# пропущено: K», где N — прогнанные тесты. Ни одного прогнанного — провал: всё пропущенное зелёным не считается.
+# Те же тесты идут в Git Bash (Claude Code для Windows): docs/development.md.
 set -uo pipefail
 
 work=$(mktemp -d)
@@ -13,12 +15,21 @@ bin="$work/scripts"
 cp -r "$(dirname "$0")/../../plugins/meeting/skills/meeting/scripts" "$bin"
 chmod -x "$bin"/*
 
+# Скриптам скилла jq не положен: в Git for Windows его нет. Заглушка роняет любой вызов и там, где jq стоит
+# (WSL разработчика, раннер GitHub). Шаг выпуска на Linux-раннере jq берёт — его тестам PATH без заглушки.
+path_with_jq=$PATH
+mkdir -p "$work/no-jq"
+printf '#!/usr/bin/env bash\necho "jq вызван: $*" >&2\nexit 127\n' > "$work/no-jq/jq"
+chmod +x "$work/no-jq/jq"
+export PATH="$work/no-jq:$PATH"
+
 # Предел ожидания вывода: скрипт, который не отдал блок, роняет тест, а не вешает прогон.
 LIMIT_SECONDS=5
 
 watchers=()
 passed=0
 failed=0
+skipped=0
 
 stop_watchers() {
     for pid in "${watchers[@]}"; do kill "$pid" 2>/dev/null; done
@@ -114,9 +125,40 @@ expect_exit() {
     [ "$code" -eq "$2" ] || { echo "код выхода $code вместо $2"; return 1; }
 }
 
+# current_json <файл> <id> <каталог>: current.json в том виде, в каком его пишет приложение (System.Text.Json):
+# отступы, \ и " экранированы, кириллица как есть, без перевода строки в конце. Каталог — уже в виде JSON,
+# если в нём нужны \uXXXX.
+current_json() {
+    local directory=${3//\\/\\\\}
+    directory=${directory//\"/\\\"}
+    printf '{\n  "id": "%s",\n  "name": "встреча",\n  "directory": "%s",\n  "startedAt": "2026-11-13T08:01:27.0395377+00:00"\n}' \
+        "$2" "$directory" > "$1"
+}
+
+# Причина, по которой тест не идёт в этой оболочке; пусто — идёт.
+skip_reason() {
+    if [[ $OSTYPE == msys* || $OSTYPE == cygwin* ]]; then
+        case $1 in
+            install_*) echo "install-skill.sh — путь разработчика в WSL; в Windows скилл из рабочей копии — claude --plugin-dir" ;;
+            release_*) echo "release-version.sh — шаг выпуска на Linux-раннере" ;;
+            *) return 1 ;;
+        esac
+    else
+        case $1 in
+            *_WhenCalledByWindowsPath_* | *InGitBash_*) echo "только в Git Bash" ;;
+            *) return 1 ;;
+        esac
+    fi
+}
+
 # Тест идёт в этой же оболочке, а не в подоболочке: иначе его фоновые meeting-watch не остановить.
 run() {
-    local name=$1
+    local name=$1 reason
+    if reason=$(skip_reason "$name"); then
+        skipped=$((skipped + 1))
+        echo "skip  $name — $reason"
+        return 0
+    fi
     if "$name" > "$work/test.log" 2>&1; then
         passed=$((passed + 1))
         echo "ok    $name"
@@ -248,16 +290,22 @@ watch_WhenTwoProjects_ReadIndependently() {
     expect_output "$work/b" $'начало\t1' "$(line 1)"
 }
 
-# Заглушка wslpath: переводит любой путь в каталог встречи и пишет, что её вызвали.
-stub_wslpath() {
-    mkdir -p "$work/stub"
-    printf '#!/usr/bin/env bash\necho "$*" >> "%s/wslpath.calls"\necho "%s"\n' "$work" "$meeting" > "$work/stub/wslpath"
-    chmod +x "$work/stub/wslpath"
+# stub_paths [каталог] [ответ]: заглушка перевода путей под обоими именами — cygpath (Git Bash) и wslpath (WSL),
+# так тест одинаков в обеих оболочках. Любой путь переводит в ответ (по умолчанию — каталог встречи), аргументы
+# дописывает в paths.calls.
+stub_paths() {
+    local dir=${1:-$work/stub} answer=${2:-$meeting} name
+    mkdir -p "$dir"
+    rm -f "$work/paths.calls"
+    for name in cygpath wslpath; do
+        printf '#!/usr/bin/env bash\necho "$*" >> "%s/paths.calls"\necho "%s"\n' "$work" "$answer" > "$dir/$name"
+        chmod +x "$dir/$name"
+    done
 }
 
 dir_WhenCurrentHasWindowsPath_TranslatesIt() {
     new_meeting
-    stub_wslpath
+    stub_paths
     mkdir -p "$work/root"
     printf '{ "directory": "D:\\\\meetings\\\\2026-11-10_10-00-00_x" }\n' > "$work/root/current.json"
 
@@ -265,13 +313,13 @@ dir_WhenCurrentHasWindowsPath_TranslatesIt() {
     got=$(PATH="$work/stub:$PATH" MEETINGS_ROOT="$work/root" bash "$bin/meeting-dir") || return 1
 
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
-    grep -qxF -- '-u D:\meetings\2026-11-10_10-00-00_x' "$work/wslpath.calls" || { cat "$work/wslpath.calls"; return 1; }
+    grep -qxF -- '-u D:\meetings\2026-11-10_10-00-00_x' "$work/paths.calls" || { cat "$work/paths.calls"; return 1; }
 }
 
 dir_WhenCurrentHasPosixPath_TakesItAsIs() {
     new_meeting
     mkdir -p "$work/posix-root"
-    jq -n --arg d "$meeting" '{ directory: $d }' > "$work/posix-root/current.json"
+    current_json "$work/posix-root/current.json" x "$meeting"
 
     local got
     got=$(MEETINGS_ROOT="$work/posix-root" bash "$bin/meeting-dir") || return 1
@@ -279,9 +327,50 @@ dir_WhenCurrentHasPosixPath_TakesItAsIs() {
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
 }
 
+# Приложение пишет символы вне BMP суррогатной парой \uXXXX\uXXXX, кириллицу — как есть; \u — по байту UTF-8
+# от одного до четырёх.
+dir_WhenCurrentHasEscapedWindowsPath_UnescapesIt() {
+    new_meeting
+    stub_paths
+    mkdir -p "$work/escaped-root"
+    printf '{\n  "id": "x",\n  "directory": "D:\\\\Мои встречи\\\\2026_x \\uD83D\\uDE00 \\u0436 \\u2028 \\u0041",\n  "startedAt": "2026"\n}' \
+        > "$work/escaped-root/current.json"
+
+    local got
+    got=$(PATH="$work/stub:$PATH" MEETINGS_ROOT="$work/escaped-root" bash "$bin/meeting-dir") || return 1
+
+    [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
+    grep -qxF -- "-u D:\\Мои встречи\\2026_x 😀 ж "$'\xe2\x80\xa8'" A" "$work/paths.calls" || { cat "$work/paths.calls"; return 1; }
+}
+
+# В Git Bash путь Windows из current.json открывается как есть, без wslpath.
+dir_WhenWindowsPathInGitBash_OpensItAsIs() {
+    new_meeting
+    mkdir -p "$work/gitbash-root"
+    current_json "$work/gitbash-root/current.json" x "$(cygpath -w "$meeting")"
+
+    local got
+    got=$(MEETINGS_ROOT="$work/gitbash-root" bash "$bin/meeting-dir") || return 1
+
+    [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
+}
+
+dir_WhenCurrentHasEscapedQuotesAndSlashes_TakesDirectoryWhole() {
+    local quoted="$work/встреча \"a\" b"
+    mkdir -p "$quoted" "$work/quoted-root"
+    local escaped=${quoted//\"/\\\"}
+    escaped=${escaped//\//\\/}
+    printf '{\n  "id": "x",\n  "directory": "%s",\n  "name": "после"\n}' "$escaped" > "$work/quoted-root/current.json"
+
+    local got
+    got=$(MEETINGS_ROOT="$work/quoted-root" bash "$bin/meeting-dir") || return 1
+
+    [ "$got" = "$quoted" ] || { echo "получено: $got"; return 1; }
+}
+
 dir_WhenArgumentGiven_TranslatesWindowsPathWithoutCurrent() {
     new_meeting
-    stub_wslpath
+    stub_paths
 
     local got
     got=$(PATH="$work/stub:$PATH" MEETINGS_ROOT="" bash "$bin/meeting-dir" 'D:\meetings\x') || return 1
@@ -308,17 +397,15 @@ dir_WhenRootNotSet_ExitsAsNotInstalled() {
 dir_WhenRootOnlyInWindows_TakesItFromRegistry() {
     new_meeting
     stub_reg 'D:\Мои встречи'
-    rm -f "$work/wslpath.calls"
-    mkdir -p "$work/stub" "$work/registry-root"
-    printf '#!/usr/bin/env bash\necho "$*" >> "%s/wslpath.calls"\necho "%s/registry-root"\n' "$work" "$work" > "$work/stub/wslpath"
-    chmod +x "$work/stub/wslpath"
-    jq -n --arg d "$meeting" '{ directory: $d }' > "$work/registry-root/current.json"
+    stub_paths "$work/stub" "$work/registry-root"
+    mkdir -p "$work/registry-root"
+    current_json "$work/registry-root/current.json" x "$meeting"
 
     local got
     got=$(PATH="$work/stub-reg:$work/stub:$PATH" MEETINGS_ROOT="" bash "$bin/meeting-dir") || return 1
 
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
-    grep -qxF -- '-u D:\Мои встречи' "$work/wslpath.calls" || { cat "$work/wslpath.calls"; return 1; }
+    grep -qxF -- '-u D:\Мои встречи' "$work/paths.calls" || { cat "$work/paths.calls"; return 1; }
 }
 
 dir_WhenMeetingsRootSet_PrefersItOverRegistry() {
@@ -326,7 +413,7 @@ dir_WhenMeetingsRootSet_PrefersItOverRegistry() {
     stub_reg "$work/registry-only"
     mkdir -p "$work/registry-only" "$work/own-root"
     echo '{ "directory": "/nonexistent" }' > "$work/registry-only/current.json"
-    jq -n --arg d "$meeting" '{ directory: $d }' > "$work/own-root/current.json"
+    current_json "$work/own-root/current.json" x "$meeting"
 
     local got
     got=$(PATH="$work/stub-reg:$PATH" MEETINGS_ROOT="$work/own-root" bash "$bin/meeting-dir") || return 1
@@ -336,11 +423,9 @@ dir_WhenMeetingsRootSet_PrefersItOverRegistry() {
 
 dir_WhenRootIsWindowsPath_TranslatesIt() {
     new_meeting
-    mkdir -p "$work/stub"
-    printf '#!/usr/bin/env bash\necho "%s/win-root"\n' "$work" > "$work/stub/wslpath"
-    chmod +x "$work/stub/wslpath"
+    stub_paths "$work/stub" "$work/win-root"
     mkdir -p "$work/win-root"
-    jq -n --arg d "$meeting" '{ directory: $d }' > "$work/win-root/current.json"
+    current_json "$work/win-root/current.json" x "$meeting"
 
     local got
     got=$(PATH="$work/stub:$PATH" MEETINGS_ROOT='D:\meetings' bash "$bin/meeting-dir") || return 1
@@ -382,7 +467,7 @@ EOF
 start_WhenNewMeetingAppears_PrintsItsDirectoryAndPassesName() {
     new_meeting
     stub_start
-    jq -n --arg d "$meeting" '{ id: "new", directory: $d }' > "$work/start.next"
+    current_json "$work/start.next" new "$meeting"
 
     local got
     got=$(PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=5 \
@@ -392,9 +477,7 @@ start_WhenNewMeetingAppears_PrintsItsDirectoryAndPassesName() {
     [ "$(head -1 "$work/start.args")" = 'Встреча с партнёром' ] || { cat "$work/start.args"; return 1; }
 
     # Окну передан тот корень, где ждали встречу, — в виде, понятном Windows.
-    local root="$work/start-root"
-    ! command -v wslpath > /dev/null || root=$(wslpath -w "$root")
-    [ "$(sed -n 3p "$work/start.args")" = "$root" ] || { cat "$work/start.args"; return 1; }
+    [ "$(sed -n 3p "$work/start.args")" = "$(windows_path "$work/start-root")" ] || { cat "$work/start.args"; return 1; }
 }
 
 start_WhenNoNewMeeting_FailsInsteadOfTakingPrevious() {
@@ -410,18 +493,20 @@ start_WhenNoNewMeeting_FailsInsteadOfTakingPrevious() {
     grep -q 'окне meeting' "$work/start.err" || { cat "$work/start.err"; return 1; }
 }
 
-start_WhenGlossaryGiven_PassesItAsWindowsPath() {
+start_WhenGlossaryGiven_PassesItAndRootAsWindowsPaths() {
     new_meeting
     stub_start
-    jq -n --arg d "$meeting" '{ id: "new", directory: $d }' > "$work/start.next"
-    printf '#!/usr/bin/env bash\necho "D:\\\\glossary.txt"\n' > "$work/stub-start/wslpath"
-    chmod +x "$work/stub-start/wslpath"
+    current_json "$work/start.next" new "$meeting"
+    stub_paths "$work/stub-start" 'C:\Windows-путь'
     touch "$work/glossary.txt"
 
     PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=5 \
         timeout 15 bash "$bin/meeting-start" 'x' "$work/glossary.txt" > /dev/null || return 1
 
-    [ "$(sed -n 2p "$work/start.args")" = 'D:\glossary.txt' ] || { cat "$work/start.args"; return 1; }
+    [ "$(sed -n 2p "$work/start.args")" = 'C:\Windows-путь' ] && [ "$(sed -n 3p "$work/start.args")" = 'C:\Windows-путь' ] ||
+        { cat "$work/start.args"; return 1; }
+    grep -qxF -- "-w $work/glossary.txt" "$work/paths.calls" && grep -qxF -- "-w $work/start-root" "$work/paths.calls" ||
+        { cat "$work/paths.calls"; return 1; }
 }
 
 start_WhenAppNotInstalled_ExitsAsNotInstalledWithoutWaiting() {
@@ -450,7 +535,53 @@ stub_refine() {
 }
 
 windows_path() {
-    if command -v wslpath > /dev/null; then wslpath -w "$1"; else printf '%s\n' "$1"; fi
+    if command -v cygpath > /dev/null; then
+        cygpath -w "$1"
+    elif command -v wslpath > /dev/null; then
+        wslpath -w "$1"
+    else
+        printf '%s\n' "$1"
+    fi
+}
+
+# Только cygpath, как в Git Bash: в WSL рядом настоящий wslpath, и путь от него заглушку не обманет.
+refine_WhenCygpathPresent_PassesItsWindowsPathToWindow() {
+    new_meeting
+    end_of_recording 0
+    stub_refine
+    stub_paths "$work/stub-paths" 'C:\встречи\x'
+    rm "$work/stub-paths/wslpath"
+
+    local got
+    got=$(PATH="$work/stub-refine:$work/stub-paths:$PATH" timeout 5 bash "$bin/meeting-refine" "$meeting") || return 1
+
+    [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
+    [ "$(cat "$work/refine.args")" = 'C:\встречи\x' ] || { cat "$work/refine.args"; return 1; }
+    grep -qxF -- "-w $meeting" "$work/paths.calls" || { cat "$work/paths.calls"; return 1; }
+}
+
+# Claude Code в Windows называет каталог скилла путём Windows: скрипт, вызванный по нему, находит соседей
+# (dirname Git Bash делит путь и по \).
+scripts_WhenCalledByWindowsPath_FindNeighbours() {
+    new_meeting
+    end_of_recording 0
+    local scripts got
+    scripts=$(cygpath -w "$bin")
+
+    mkdir -p "$work/backslash-root"
+    current_json "$work/backslash-root/current.json" x "$meeting"
+    got=$(MEETINGS_ROOT="$work/backslash-root" bash "$scripts\\meeting-dir") || return 1
+    [ "$got" = "$meeting" ] || { echo "meeting-dir: $got"; return 1; }
+
+    stub_refine
+    got=$(PATH="$work/stub-refine:$PATH" timeout 5 bash "$scripts\\meeting-refine" "$meeting") || return 1
+    [ "$got" = "$meeting" ] || { echo "meeting-refine: $got"; return 1; }
+
+    stub_start
+    current_json "$work/start.next" new "$meeting"
+    got=$(PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=5 \
+        timeout 15 bash "$scripts\\meeting-start" 'x') || return 1
+    [ "$got" = "$meeting" ] || { echo "meeting-start: $got"; return 1; }
 }
 
 refine_WhenFinishedMeetingGiven_OpensWindowForItAndPrintsIt() {
@@ -471,7 +602,7 @@ refine_WhenNoDirectoryGiven_TakesCurrentMeeting() {
     end_of_recording 0
     stub_refine
     mkdir -p "$work/refine-root"
-    jq -n --arg d "$meeting" '{ id: "x", directory: $d }' > "$work/refine-root/current.json"
+    current_json "$work/refine-root/current.json" x "$meeting"
 
     local got
     got=$(PATH="$work/stub-refine:$PATH" MEETINGS_ROOT="$work/refine-root" timeout 5 bash "$bin/meeting-refine") || return 1
@@ -648,6 +779,34 @@ notify_WhenNoWslenvBefore_SetsOnlyItsName() {
     [ "$(cat "$work/notify.wslenv")" = "MEETING_NOTIFY_TEXT" ] || { echo "WSLENV: $(cat "$work/notify.wslenv")"; return 1; }
 }
 
+# stub_native <каталог> <переменная>: заглушка powershell.exe отдаёт переменную настоящему процессу Windows
+# (cmd.exe) и пишет, что тот увидел, в native.out. Git Bash переделывает похожие на путь значения переменных,
+# когда запускает программу Windows, — заглушка-скрипт этого не видит, cmd.exe видит.
+stub_native() {
+    mkdir -p "$1"
+    rm -f "$work/native.out"
+    printf '#!/usr/bin/env bash\ncmd.exe //c "echo %%%s%%" | tr -d "\\r" > "%s/native.out"\n' "$2" "$work" > "$1/powershell.exe"
+    chmod +x "$1/powershell.exe"
+}
+
+notify_WhenTextStartsWithSlashInGitBash_ReachesWindowsUnchanged() {
+    stub_native "$work/stub-native" MEETING_NOTIFY_TEXT
+
+    PATH="$work/stub-native:$PATH" bash "$bin/meeting-notify" '/api/orders 500' || return 1
+
+    [ "$(cat "$work/native.out")" = '/api/orders 500' ] || { cat "$work/native.out"; return 1; }
+}
+
+start_WhenNameStartsWithSlashInGitBash_ReachesWindowsUnchanged() {
+    stub_native "$work/stub-native" MEETING_START_NAME
+    mkdir -p "$work/start-root"
+
+    PATH="$work/stub-native:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=1 \
+        timeout 15 bash "$bin/meeting-start" '/retro' > /dev/null 2>&1
+
+    [ "$(cat "$work/native.out")" = '/retro' ] || { cat "$work/native.out"; return 1; }
+}
+
 notify_WhenNoPowershell_ExitsQuietly() {
     mkdir -p "$work/no-ps"
     local output
@@ -711,7 +870,9 @@ install_WhenLinkedElsewhere_RefusesAndKeepsLink() {
 }
 
 # Скрипты выпуска и моделей репозитория — те же bash-тесты: отдельного набора ради двух скриптов нет.
+# grep -P отказывает без локали UTF-8, а неинтерактивный Git Bash её не задаёт.
 models_WhenChecksumsListedTwice_TheyMatch() {
+    local -x LC_ALL=C.UTF-8
     local name ps sh
     for name in vad recognizer; do
         ps=$(grep -oP "^\\\$${name}Sha256 = '\K[0-9a-f]{64}" "$repo/scripts/install.ps1")
@@ -721,6 +882,7 @@ models_WhenChecksumsListedTwice_TheyMatch() {
 }
 
 models_WhenWhisperFileNamedInThreePlaces_NamesMatch() {
+    local -x LC_ALL=C.UTF-8
     local code ps refine
     code=$(grep -oP 'WhisperFile = "\K[^"]+' "$repo/src/MeetingAssistant.Infrastructure/Speech/SpeechOptions.cs")
     ps=$(grep -oP "^\\\$whisperFile = '\K[^']+" "$repo/scripts/install.ps1")
@@ -732,13 +894,13 @@ models_WhenWhisperFileNamedInThreePlaces_NamesMatch() {
 release_WhenPluginVersionMatchesTag_PrintsVersion() {
     printf '{ "name": "meeting", "version": "1.2.3" }\n' > "$work/plugin.json"
     local got
-    got=$(bash "$repo/scripts/release-version.sh" v1.2.3 "$work/plugin.json") || return 1
+    got=$(PATH="$path_with_jq" bash "$repo/scripts/release-version.sh" v1.2.3 "$work/plugin.json") || return 1
     [ "$got" = "1.2.3" ] || { echo "получено: $got"; return 1; }
 }
 
 release_WhenPluginVersionDiffers_Refuses() {
     printf '{ "name": "meeting", "version": "1.2.2" }\n' > "$work/plugin.json"
-    if bash "$repo/scripts/release-version.sh" v1.2.3 "$work/plugin.json" > /dev/null 2>&1; then
+    if PATH="$path_with_jq" bash "$repo/scripts/release-version.sh" v1.2.3 "$work/plugin.json" > /dev/null 2>&1; then
         echo "отказа нет"
         return 1
     fi
@@ -748,7 +910,7 @@ release_WhenTagIsNotVersion_Refuses() {
     printf '{ "name": "meeting", "version": "1.2.3" }\n' > "$work/plugin.json"
     local tag
     for tag in 1.2.3 v1.2 release-1.2.3; do
-        if bash "$repo/scripts/release-version.sh" "$tag" "$work/plugin.json" > /dev/null 2>&1; then
+        if PATH="$path_with_jq" bash "$repo/scripts/release-version.sh" "$tag" "$work/plugin.json" > /dev/null 2>&1; then
             echo "отказа нет: $tag"
             return 1
         fi
@@ -759,5 +921,6 @@ for test in $(declare -F | awk '{ print $3 }' | grep -E '^[a-z]+_When'); do
     run "$test"
 done
 
-echo "итого: $((passed + failed)), упало: $failed"
+echo "итого: $((passed + failed)), упало: $failed, пропущено: $skipped"
+[ "$passed" -gt 0 ] || { echo "ни одного прогнанного теста"; exit 1; }
 [ "$failed" -eq 0 ]

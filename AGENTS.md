@@ -66,6 +66,8 @@
 
 - Нужен .NET 10 SDK. Сборка и тесты идут на Windows, Linux и в WSL; захват звука (WASAPI) — только в
   Windows-процессе.
+- Скрипты скилла `/meeting` — bash для WSL и Git Bash (Claude Code для Windows) одной копией: правка скрипта
+  проверяется тестами скилла в обеих оболочках (`docs/development.md`), граница с Windows — `docs/decisions.md`.
 - Распознавание идёт на CPU: во время созвона тяжёлое (сборки, IDE) на той же машине не запускать.
 - Прототип: Python 3.12 + `sherpa-onnx` 2.0.1 + `numpy` (venv через `uv`, см. `prototype/README.md`).
 - Настройки конкретной машины (пути SDK, лимиты памяти, доступ к GitHub) в репозиторий не пишутся.
