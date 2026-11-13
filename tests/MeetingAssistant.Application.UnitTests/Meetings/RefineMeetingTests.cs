@@ -278,7 +278,7 @@ public sealed class RefineMeetingTests : IDisposable
             .Returns(async _ =>
             {
                 await _cancellation.CancelAsync();
-                return (IReadOnlyList<RecognizedSegment>)[new RecognizedSegment(Seconds(0), Seconds(1), Text)];
+                return [new RecognizedSegment(Seconds(0), Seconds(1), Text)];
             });
 
         await Should.ThrowAsync<OperationCanceledException>(
