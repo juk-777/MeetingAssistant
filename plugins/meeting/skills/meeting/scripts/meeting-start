@@ -26,10 +26,9 @@ fail() {
 
 here="$(cd "$(dirname "$0")" && pwd)"
 command -v powershell.exe > /dev/null || fail "Нет powershell.exe: запись запускается только под Windows (из WSL или Git Bash)."
-command -v jq > /dev/null || fail "Нужен jq: он читает current.json."
 
 root=$(bash "$here/meeting-dir" --root)
-previous=$(jq -r '.id // empty' "$root/current.json" 2>/dev/null || true)
+previous=$(bash "$here/current-field" "$root/current.json" id 2>/dev/null || true)
 window_root=$root
 command -v wslpath > /dev/null && window_root=$(wslpath -w "$root")
 
@@ -63,7 +62,7 @@ Start-Process -FilePath cmd.exe -ArgumentList "/c `"$command & pause`"" -Working
 
 deadline=$((SECONDS + ${MEETING_START_TIMEOUT:-60}))
 while [ $SECONDS -lt $deadline ]; do
-    id=$(jq -r '.id // empty' "$root/current.json" 2>/dev/null || true)
+    id=$(bash "$here/current-field" "$root/current.json" id 2>/dev/null || true)
     if [ -n "$id" ] && [ "$id" != "$previous" ]; then
         exec bash "$here/meeting-dir"
     fi

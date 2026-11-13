@@ -774,7 +774,9 @@ install_WhenLinkedElsewhere_RefusesAndKeepsLink() {
 }
 
 # Скрипты выпуска и моделей репозитория — те же bash-тесты: отдельного набора ради двух скриптов нет.
+# grep -P отказывает без локали UTF-8, а неинтерактивный Git Bash её не задаёт.
 models_WhenChecksumsListedTwice_TheyMatch() {
+    local -x LC_ALL=C.UTF-8
     local name ps sh
     for name in vad recognizer; do
         ps=$(grep -oP "^\\\$${name}Sha256 = '\K[0-9a-f]{64}" "$repo/scripts/install.ps1")
@@ -784,6 +786,7 @@ models_WhenChecksumsListedTwice_TheyMatch() {
 }
 
 models_WhenWhisperFileNamedInThreePlaces_NamesMatch() {
+    local -x LC_ALL=C.UTF-8
     local code ps refine
     code=$(grep -oP 'WhisperFile = "\K[^"]+' "$repo/src/MeetingAssistant.Infrastructure/Speech/SpeechOptions.cs")
     ps=$(grep -oP "^\\\$whisperFile = '\K[^']+" "$repo/scripts/install.ps1")

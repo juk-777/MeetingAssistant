@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Строковое поле current.json без jq: в Git for Windows его нет.
+#
+# current.json пишет приложение записи (System.Text.Json): плоский объект, нужные поля — строки. Значение
+# печатается без экранирования JSON: \\ \" \/ \b \f \n \r \t и \uXXXX; символ вне BMP (эмодзи) приходит
+# суррогатной парой и собирается в один. Нет файла или поля — код 1.
+#
+# current-field <файл> <поле>
+set -euo pipefail
+
+[ $# -eq 2 ] || { echo "current-field <файл> <поле>" >&2; exit 2; }
+[ -f "$1" ] || exit 1
+
+content=$(< "$1")
+field='"'$2'"[[:space:]]*:[[:space:]]*"(([^"\\]|\\.)*)"'
+[[ $content =~ $field ]] || exit 1
+raw=${BASH_REMATCH[1]}
+
+# Байты UTF-8 кода $1 — в value. Байтами, а не printf '\U…': тот зависит от локали, а в Git Bash она бывает не задана.
+append_utf8() {
+    local code=$1 byte hex
+    local -a bytes
+    if ((code < 0x80)); then
+        bytes=("$code")
+    elif ((code < 0x800)); then
+        bytes=($((0xC0 | code >> 6)) $((0x80 | (code & 0x3F))))
+    elif ((code < 0x10000)); then
+        bytes=($((0xE0 | code >> 12)) $((0x80 | (code >> 6 & 0x3F))) $((0x80 | (code & 0x3F))))
+    else
+        bytes=($((0xF0 | code >> 18)) $((0x80 | (code >> 12 & 0x3F))) $((0x80 | (code >> 6 & 0x3F))) $((0x80 | (code & 0x3F))))
+    fi
+    for byte in "${bytes[@]}"; do
+        printf -v hex '\\x%02x' "$byte"
+        printf -v byte "$hex"
+        value+=$byte
+    done
+}
+
+low_surrogate='^\\u([dD][c-fC-F][0-9a-fA-F]{2})'
+value=""
+while [[ $raw == *\\* ]]; do
+    value+=${raw%%\\*}
+    raw=${raw#*\\}
+    case ${raw:0:1} in
+        u)
+            code=$((16#${raw:1:4}))
+            raw=${raw:5}
+            if ((code >= 0xD800 && code <= 0xDBFF)) && [[ $raw =~ $low_surrogate ]]; then
+                code=$((0x10000 + ((code - 0xD800) << 10) + (16#${BASH_REMATCH[1]} - 0xDC00)))
+                raw=${raw:6}
+            fi
+            append_utf8 "$code"
+            continue
+            ;;
+        b) value+=$'\b' ;;
+        f) value+=$'\f' ;;
+        n) value+=$'\n' ;;
+        r) value+=$'\r' ;;
+        t) value+=$'\t' ;;
+        *) value+=${raw:0:1} ;;
+    esac
+    raw=${raw:1}
+done
+value+=$raw
+
+printf '%s\n' "$value"

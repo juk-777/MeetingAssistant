@@ -14,6 +14,8 @@
 # meeting-dir --root — сам корень встреч, локальным путём (его ждёт meeting-start)
 set -euo pipefail
 
+here="$(cd "$(dirname "$0")" && pwd)"
+
 fail() {
     printf '%s\n' "$1" >&2
     exit 1
@@ -59,8 +61,7 @@ else
     current="$(meetings_root)/current.json"
     [ -f "$current" ] ||
         fail "Нет $current: встреча ещё не начиналась. Запустить запись (meeting start или meeting replay) и повторить."
-    command -v jq >/dev/null || fail "Нужен jq: он читает $current."
-    directory=$(jq -er '.directory' "$current") || fail "В $current нет поля directory."
+    directory=$(bash "$here/current-field" "$current" directory) || fail "В $current нет поля directory."
     dir=$(to_local "$directory")
 fi
 
