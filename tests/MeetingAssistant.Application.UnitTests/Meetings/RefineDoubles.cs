@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using MeetingAssistant.Application.Meetings.Recording;
 using MeetingAssistant.Application.Meetings.Refine;
 using MeetingAssistant.Domain.Meetings;
+using MeetingAssistant.SharedKernel;
 
 namespace MeetingAssistant.Application.UnitTests.Meetings;
 
@@ -17,10 +18,20 @@ internal sealed class DraftTranscripts : IRefinedTranscripts
     /// </summary>
     public Func<Utterance, Task>? OnAppend { get; set; }
 
-    public Task<IRefinedTranscriptDraft> Begin(string directory, CancellationToken cancellationToken)
+    /// <summary>
+    /// Отказ начала — как при уточнении, которое уже идёт.
+    /// </summary>
+    public Error? Refusal { get; set; }
+
+    public Task<Result<IRefinedTranscriptDraft>> Begin(string directory, CancellationToken cancellationToken)
     {
+        if (Refusal is not null)
+        {
+            return Task.FromResult(Result.Failure<IRefinedTranscriptDraft>(Refusal));
+        }
+
         Draft = new DraftTranscript(directory, OnAppend);
-        return Task.FromResult<IRefinedTranscriptDraft>(Draft);
+        return Task.FromResult(Result.Success<IRefinedTranscriptDraft>(Draft));
     }
 }
 

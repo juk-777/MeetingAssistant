@@ -11,6 +11,10 @@ public static class StorageErrors
     public const string MeetingNotFoundCode = "Storage.MeetingNotFound";
     public const string AudioNotFoundCode = "Storage.AudioNotFound";
     public const string RecordingNotFinishedCode = "Storage.RecordingNotFinished";
+    public const string RefineInProgressCode = "Storage.RefineInProgress";
+
+    public static Error RefineInProgress(string directory) =>
+        new(RefineInProgressCode, $"Встречу {directory} уже уточняет другое окно meeting refine: дождитесь его конца.");
 
     public static Error MeetingNotFound(string directory) =>
         new(MeetingNotFoundCode, $"Нет каталога встречи: {directory}.");

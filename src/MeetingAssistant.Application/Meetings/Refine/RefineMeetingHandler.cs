@@ -10,6 +10,8 @@ namespace MeetingAssistant.Application.Meetings.Refine;
 /// Фразы канала копятся в кусок до окна распознавателя (<see cref="SpeechGroup"/>), кусок распознаётся, как
 /// только следующая фраза в него не помещается, и следующий кусок звука читается только после этого: звук с диска
 /// идёт быстрее распознавания, и очередь копила бы в памяти звук всей встречи.
+/// <br/>Кусок редкого канала набирается долго и распознаётся позже кусков другого, поэтому строки копятся и пишутся
+/// в конце по времени записи: транскрипт читается по порядку разговора.
 /// </remarks>
 internal sealed class RefineMeetingHandler(
     IRecordedMeetings recordedMeetings,
@@ -34,9 +36,16 @@ internal sealed class RefineMeetingHandler(
             return prepared;
         }
 
+        Result<IRefinedTranscriptDraft> begun = await refinedTranscripts.Begin(command.Directory, cancellationToken);
+
+        if (begun.IsFailure)
+        {
+            return begun;
+        }
+
         RecordedMeeting meeting = opened.Value;
-        await using IRefinedTranscriptDraft draft = await refinedTranscripts.Begin(command.Directory, cancellationToken);
-        var refinement = new Refinement(draft, meeting.Duration, refineRecognizer, command.Progress, timeProvider);
+        await using IRefinedTranscriptDraft draft = begun.Value;
+        var refinement = new Refinement(meeting.Duration, refineRecognizer, command.Progress, timeProvider);
         var detectors = new Dictionary<Channel, IVoiceActivityDetector>();
 
         try
@@ -67,25 +76,30 @@ internal sealed class RefineMeetingHandler(
             }
         }
 
+        foreach (Utterance utterance in refinement.InRecordingOrder())
+        {
+            await draft.Append(utterance, cancellationToken);
+        }
+
         await draft.Complete(cancellationToken);
 
         return Result.Success();
     }
 
     /// <summary>
-    /// Куски каналов и строки второго транскрипта: свой сквозной номер с 1, строка — отрезок распознавателя.
+    /// Куски каналов и распознанные отрезки; отрезок с текстом — будущая строка второго транскрипта.
     /// </summary>
     private sealed class Refinement(
-        IRefinedTranscriptDraft draft,
         TimeSpan duration,
         IRefineRecognizer refineRecognizer,
         IProgress<RefinePosition> progress,
         TimeProvider timeProvider)
     {
         private readonly Dictionary<Channel, SpeechGroup> _groups = [];
+        private readonly List<(Channel Channel, SpeechSpan Span, string Text, DateTimeOffset RecognizedAt)> _lines = [];
         private readonly long _started = timeProvider.GetTimestamp();
-        private int _lastNumber;
         private TimeSpan _speech;
+        private TimeSpan _position;
 
         public async Task Add(Channel channel, IReadOnlyList<DetectedPhrase> phrases, CancellationToken cancellationToken)
         {
@@ -117,25 +131,30 @@ internal sealed class RefineMeetingHandler(
             }
         }
 
+        /// <summary>
+        /// Строки по началу на шкале записи, номер — с 1 в этом порядке.
+        /// </summary>
+        public IEnumerable<Utterance> InRecordingOrder() =>
+            _lines
+                .OrderBy(line => line.Span.Start)
+                .ThenBy(line => line.Channel)
+                .Select((line, index) => new Utterance(index + 1, line.Channel, line.Span, line.Text, line.RecognizedAt));
+
         private async Task Recognize(Channel channel, SpeechGroup group, CancellationToken cancellationToken)
         {
             IReadOnlyList<RecognizedSegment> segments = await refineRecognizer.Recognize(group.Samples(), cancellationToken);
+            DateTimeOffset recognizedAt = timeProvider.GetUtcNow();
 
-            foreach (RecognizedSegment segment in segments)
+            foreach (RecognizedSegment segment in segments.Where(segment => !string.IsNullOrWhiteSpace(segment.Text)))
             {
-                if (string.IsNullOrWhiteSpace(segment.Text))
-                {
-                    continue;
-                }
-
-                _lastNumber++;
-                await draft.Append(
-                    new Utterance(_lastNumber, channel, group.ToRecording(segment), segment.Text.Trim(), timeProvider.GetUtcNow()),
-                    cancellationToken);
+                _lines.Add((channel, group.ToRecording(segment), segment.Text.Trim(), recognizedAt));
             }
 
             _speech += group.Speech;
-            progress.Report(new RefinePosition(group.End, duration, _lastNumber, _speech, timeProvider.GetElapsedTime(_started)));
+
+            // Кусок редкого канала кончается раньше уже пройденного другим каналом: ход назад не идёт.
+            _position = group.End > _position ? group.End : _position;
+            progress.Report(new RefinePosition(_position, duration, _lines.Count, _speech, timeProvider.GetElapsedTime(_started)));
             group.Clear();
         }
     }

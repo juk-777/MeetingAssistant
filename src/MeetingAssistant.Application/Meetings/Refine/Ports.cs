@@ -33,7 +33,7 @@ public interface IRefineRecognizer
     TimeSpan Window { get; }
 
     /// <summary>
-    /// Готовит модель до первого куска: кладёт на место, если её нет; отказ — модель не получена.
+    /// Грузит модель до первого куска; отказ — модели нет.
     /// </summary>
     Task<Result> Prepare(CancellationToken cancellationToken);
 
@@ -56,14 +56,18 @@ public sealed record RecognizedSegment(TimeSpan Start, TimeSpan End, string Text
 /// </summary>
 public interface IRefinedTranscripts
 {
-    Task<IRefinedTranscriptDraft> Begin(string directory, CancellationToken cancellationToken);
+    /// <summary>
+    /// Начинает второй транскрипт встречи; отказ — его уже пишет другое уточнение.
+    /// </summary>
+    Task<Result<IRefinedTranscriptDraft>> Begin(string directory, CancellationToken cancellationToken);
 }
 
 /// <summary>
 /// Второй транскрипт, который пишется: виден готовым только после <see cref="Complete"/>.
 /// </summary>
 /// <remarks>
-/// Освобождение без <see cref="Complete"/> бросает написанное, прежний готовый транскрипт остаётся.
+/// Освобождение без <see cref="Complete"/> бросает написанное, прежний готовый транскрипт остаётся. Пока черновик
+/// открыт, второе уточнение той же встречи не начнётся.
 /// </remarks>
 public interface IRefinedTranscriptDraft : IAsyncDisposable
 {

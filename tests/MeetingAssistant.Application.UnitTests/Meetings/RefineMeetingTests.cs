@@ -94,10 +94,53 @@ public sealed class RefineMeetingTests : IDisposable
         Draft().Lines.Select(line => (line.Text, line.Span.Start, line.Span.Duration)).ShouldBe(
         [
             ("А", Seconds(0), Seconds(2)),
-            ("Б", Seconds(7), Seconds(3)),
             ("В", TimeSpan.FromSeconds(1.5), TimeSpan.FromSeconds(6.5)),
+            ("Б", Seconds(7), Seconds(3)),
             ("Г", TimeSpan.FromSeconds(9.5), TimeSpan.FromSeconds(0.5)),
         ]);
+    }
+
+    [Fact]
+    public async Task Handle_WhenRareChannelRecognizedLast_WritesLinesInRecordingOrderAndProgressNeverGoesBack()
+    {
+        // «Я» говорит секунду и молчит: его кусок распознаётся последним, после трёх кусков «Собеседников».
+        Recording(
+            Seconds(2),
+            ScriptedSource.Seconds(Channel.Me, 1),
+            ScriptedSource.Seconds(Channel.Others, 2),
+            ScriptedSource.Pause(Channel.Me, 7),
+            ScriptedSource.Seconds(Channel.Others, 2),
+            ScriptedSource.Seconds(Channel.Others, 2),
+            ScriptedSource.Seconds(Channel.Others, 2));
+        RecognizerReturnsWhole(Text);
+        var positions = new List<TimeSpan>();
+        _progress.When(progress => progress.Report(Arg.Any<RefinePosition>()))
+            .Do(call => positions.Add(call.Arg<RefinePosition>().Position));
+
+        await Refine();
+
+        Draft().Lines.Select(line => (line.Number, line.Channel, line.Span.Start)).ShouldBe(
+        [
+            (1, Channel.Me, Seconds(0)),
+            (2, Channel.Others, Seconds(0)),
+            (3, Channel.Others, Seconds(2)),
+            (4, Channel.Others, Seconds(4)),
+            (5, Channel.Others, Seconds(6)),
+        ]);
+        positions.ShouldBe([Seconds(2), Seconds(4), Seconds(6), Seconds(6), Seconds(8)]);
+    }
+
+    [Fact]
+    public async Task Handle_WhenTranscriptAlreadyBeingWritten_FailsWithoutRecognizing()
+    {
+        Recording(ScriptedSource.Seconds(Channel.Me, 1));
+        _harness.RefinedTranscripts.Refusal = Refused;
+
+        Result result = await Refine();
+
+        result.Error.ShouldBe(Refused);
+        await _harness.RefineRecognizer.DidNotReceive()
+            .Recognize(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -220,7 +263,7 @@ public sealed class RefineMeetingTests : IDisposable
     }
 
     [Fact]
-    public async Task Handle_WhenCancelled_AbandonsTranscriptWithLinesWritten()
+    public async Task Handle_WhenCancelledAfterGroupRecognized_AbandonsTranscript()
     {
         Recording(
             new CountingSource(
@@ -231,13 +274,17 @@ public sealed class RefineMeetingTests : IDisposable
                 ScriptedSource.Seconds(Channel.Me, 1),
             ]),
             Seconds(1));
-        RecognizerReturnsWhole(Text);
-        _harness.RefinedTranscripts.OnAppend = async _ => await _cancellation.CancelAsync();
+        _harness.RefineRecognizer.Recognize(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                await _cancellation.CancelAsync();
+                return (IReadOnlyList<RecognizedSegment>)[new RecognizedSegment(Seconds(0), Seconds(1), Text)];
+            });
 
         await Should.ThrowAsync<OperationCanceledException>(
             _harness.Handler<RefineMeeting>().Handle(new RefineMeeting(Directory, _progress), _cancellation.Token));
 
-        Draft().Lines.ShouldNotBeEmpty();
+        Draft().Lines.ShouldBeEmpty();
         Draft().Abandoned.ShouldBeTrue();
     }
 

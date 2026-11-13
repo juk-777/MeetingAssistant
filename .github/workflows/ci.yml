@@ -29,7 +29,7 @@ jobs:
           path: models
           key: models-gigaam-v3-ctc-punct-2025-12-16-silero-vad-whisper-tiny
 
-      - name: Модели из релиза sherpa-onnx
+      - name: Модели для тестов (sherpa-onnx, Whisper tiny)
         if: steps.models.outputs.cache-hit != 'true'
         run: ./scripts/download-models.sh
 

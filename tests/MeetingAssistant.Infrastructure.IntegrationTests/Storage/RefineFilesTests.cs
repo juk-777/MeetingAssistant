@@ -89,7 +89,7 @@ public sealed class RefineFilesTests : IDisposable
     [Fact]
     public async Task Draft_WhileWriting_IsOnlyDraftAndOnCompletionBecomesTranscriptInSkillFormat()
     {
-        IRefinedTranscriptDraft draft = await new RefinedTranscriptFiles().Begin(_meeting.FullName, Token);
+        IRefinedTranscriptDraft draft = await Begin();
 
         await draft.Append(Utterance(1, Channel.Others, "Первая\tстрока"), Token);
         await draft.Append(Utterance(2, Channel.Me, "Вторая."), Token);
@@ -113,7 +113,7 @@ public sealed class RefineFilesTests : IDisposable
     {
         await File.WriteAllTextAsync(FinalPath, "прежний\n", Token);
 
-        await using (IRefinedTranscriptDraft draft = await new RefinedTranscriptFiles().Begin(_meeting.FullName, Token))
+        await using (IRefinedTranscriptDraft draft = await Begin())
         {
             await draft.Append(Utterance(1, Channel.Me, "Новый."), Token);
             (await File.ReadAllTextAsync(FinalPath, Token)).ShouldBe("прежний\n");
@@ -128,7 +128,7 @@ public sealed class RefineFilesTests : IDisposable
     {
         await File.WriteAllTextAsync(FinalPath, "прежний\n", Token);
 
-        await using (IRefinedTranscriptDraft draft = await new RefinedTranscriptFiles().Begin(_meeting.FullName, Token))
+        await using (IRefinedTranscriptDraft draft = await Begin())
         {
             await draft.Append(Utterance(1, Channel.Me, "Брошенный."), Token);
         }
@@ -142,10 +142,13 @@ public sealed class RefineFilesTests : IDisposable
     {
         await File.WriteAllTextAsync(DraftPath, "1\tстарое\n", Token);
 
-        await using IRefinedTranscriptDraft draft = await new RefinedTranscriptFiles().Begin(_meeting.FullName, Token);
-        await draft.Append(Utterance(1, Channel.Me, "Новое."), Token);
+        await using (IRefinedTranscriptDraft draft = await Begin())
+        {
+            await draft.Append(Utterance(1, Channel.Me, "Новое."), Token);
+            await draft.Complete(Token);
+        }
 
-        (await File.ReadAllLinesAsync(DraftPath, Token)).ShouldBe(["1\t1762774261.081\t[00:01:03] Я: Новое."]);
+        (await File.ReadAllLinesAsync(FinalPath, Token)).ShouldBe(["1\t1762774261.081\t[00:01:03] Я: Новое."]);
     }
 
     [Fact]
@@ -159,7 +162,7 @@ public sealed class RefineFilesTests : IDisposable
         RecordedMeeting meeting = (await Open(_meeting.FullName)).Value;
         (await meeting.Audio.Read(Token).CountAsync(Token)).ShouldBePositive();
 
-        await using (IRefinedTranscriptDraft draft = await new RefinedTranscriptFiles().Begin(_meeting.FullName, Token))
+        await using (IRefinedTranscriptDraft draft = await Begin())
         {
             await draft.Append(Utterance(1, Channel.Me, "Текст."), Token);
             await draft.Complete(Token);
@@ -168,7 +171,27 @@ public sealed class RefineFilesTests : IDisposable
         Hashes().ShouldBe(before);
     }
 
+    [Fact]
+    public async Task Begin_WhileAnotherRefinementWrites_RefusesAndLeavesItsDraftAlone()
+    {
+        await using (IRefinedTranscriptDraft first = await Begin())
+        {
+            Result<IRefinedTranscriptDraft> second = await new RefinedTranscriptFiles().Begin(_meeting.FullName, Token);
+
+            second.Error.Code.ShouldBe(StorageErrors.RefineInProgressCode);
+            await first.Append(Utterance(1, Channel.Me, "Первое."), Token);
+            await first.Complete(Token);
+        }
+
+        (await File.ReadAllLinesAsync(FinalPath, Token)).ShouldBe(["1\t1762774261.081\t[00:01:03] Я: Первое."]);
+        await using IRefinedTranscriptDraft again = await Begin();
+        again.ShouldNotBeNull();
+    }
+
     public void Dispose() => _meeting.Delete(recursive: true);
+
+    private async Task<IRefinedTranscriptDraft> Begin() =>
+        (await new RefinedTranscriptFiles().Begin(_meeting.FullName, Token)).Value;
 
     private static Task<Result<RecordedMeeting>> Open(string directory) => new RecordedMeetingFolder().Open(directory, Token);
 

@@ -108,7 +108,7 @@ try {
     $running = @(Get-Process -Name meeting -ErrorAction SilentlyContinue |
         Where-Object { $_.Path -and $_.Path.StartsWith($app, [StringComparison]::OrdinalIgnoreCase) })
     if ($running.Count -gt 0) {
-        throw "Идёт встреча (meeting, PID $($running[0].Id)): остановите её — Ctrl+C в окне записи — и повторите."
+        throw "Запущен meeting (PID $($running[0].Id)) — запись или уточнение встречи: остановите его — Ctrl+C в его окне — и повторите."
     }
 
     foreach ($leftover in $staging, $downloads) {

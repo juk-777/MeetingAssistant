@@ -17,7 +17,7 @@ using Microsoft.Extensions.Options;
 namespace MeetingAssistant.Cli.Meetings;
 
 /// <summary>
-/// Общий ход команд записи: настройки и модель, словарь, начало встречи, конвейер, итог.
+/// Общий ход команд: настройки и модель, словарь, начало встречи, конвейер записи или уточнение, итог.
 /// </summary>
 internal sealed class MeetingHost : IDisposable, IAsyncDisposable
 {
