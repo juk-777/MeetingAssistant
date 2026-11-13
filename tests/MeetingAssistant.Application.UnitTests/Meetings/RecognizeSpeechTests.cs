@@ -74,7 +74,7 @@ public sealed class RecognizeSpeechTests : IDisposable
     public async Task Handle_WhenPhraseWakesSession_WritesUtteranceBeforeWakeEvent()
     {
         _harness.RunningMeeting();
-        _harness.RecognizerReturns("Клод, где это решение");
+        _harness.RecognizerReturns("Агент, где это решение");
 
         await Recognize();
 
@@ -160,7 +160,7 @@ public sealed class RecognizeSpeechTests : IDisposable
     public async Task Handle_WhenTranscriptWriteIsPending_DoesNotWriteWakeEventUntilItCompletes()
     {
         _harness.RunningMeeting();
-        _harness.RecognizerReturns("Клод, где это решение");
+        _harness.RecognizerReturns("Агент, где это решение");
         var transcriptWritten = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _harness.Transcript.Append(Arg.Any<Utterance>(), Arg.Any<CancellationToken>()).Returns(transcriptWritten.Task);
 
