@@ -27,9 +27,9 @@ uv venv -q -p 3.12 .venv && uv pip install -q -p .venv sherpa-onnx==2.0.1 numpy
   «Модели»).
 - `glossary_check.py <словарь> <вывод>... [--hits]` — слова, термины словаря и повторы подряд по выводам
   распознавания (`docs/measurements.md`, «Термины словаря в распознавании»).
-- `meeting-feed.sh <каталог встречи> <сценарий>` — встреча без звука для прогона скилла: строки и события
-  по сценарию (`meeting-feed.tsv`) после подключения сессии; сессия — `claude -p "/meeting '<каталог>'"
-  --output-format stream-json --verbose` с временем прихода каждой строки. `hint_latency.py <stream.tsv> <hints.md>` —
+- `meeting-run.sh <новый каталог прогона> <модель> <effort> <рабочий каталог сессии>` — прогон скилла без звука:
+  `meeting-feed.sh` дописывает встречу по сценарию `meeting-feed.tsv` после подключения сессии, `claude -p` со скиллом
+  из рабочей копии пишет вывод с временем прихода каждой строки. `hint_latency.py <stream.tsv> <hints.md>` —
   задержка подсказки по частям (`docs/measurements.md`, «Скилл `/meeting`: общие подсказки и задержка по частям»).
 - `terms-reading.txt` — текст для замера английских терминов (читается вслух, запись — в `samples/`),
   `terms-reading.terms.txt` — эталонный список терминов по порядку (`docs/measurements.md`, «Английские термины»).

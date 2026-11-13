@@ -37,5 +37,8 @@ for line in open(sys.argv[2], encoding="utf-8"):
     if turn is None:
         continue
     used = sum(end - start for start, end, is_hint in tools if turn <= start < written and not is_hint)
-    kind = "молчание" if text == "-" else ("общее" if text.rstrip().endswith("общее") else "ссылка")
+    # Вид — по последней строке подсказки: «общее» (в любых кавычках и скобках) или источник; наличие чтения
+    # перед ссылкой видно по колонке инструментов этого и прошлых ходов.
+    tail = text.split(" / ")[-1].strip(" `«»()*.")
+    kind = "молчание" if text == "-" else ("общее" if tail.endswith("общее") else "ссылка")
     print(f"{number}\t{turn - event:.1f}\t{written - turn:.1f}\t{used:.1f}\t{written - event:.1f}\t{kind}")
