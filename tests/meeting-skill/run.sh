@@ -13,12 +13,21 @@ bin="$work/scripts"
 cp -r "$(dirname "$0")/../../plugins/meeting/skills/meeting/scripts" "$bin"
 chmod -x "$bin"/*
 
+# Скриптам скилла jq не положен: в Git for Windows его нет. Заглушка роняет любой вызов и там, где jq стоит
+# (WSL разработчика, раннер GitHub). Шаг выпуска на Linux-раннере jq берёт — его тестам PATH без заглушки.
+path_with_jq=$PATH
+mkdir -p "$work/no-jq"
+printf '#!/usr/bin/env bash\necho "jq вызван: $*" >&2\nexit 127\n' > "$work/no-jq/jq"
+chmod +x "$work/no-jq/jq"
+export PATH="$work/no-jq:$PATH"
+
 # Предел ожидания вывода: скрипт, который не отдал блок, роняет тест, а не вешает прогон.
 LIMIT_SECONDS=5
 
 watchers=()
 passed=0
 failed=0
+skipped=0
 
 stop_watchers() {
     for pid in "${watchers[@]}"; do kill "$pid" 2>/dev/null; done
@@ -114,9 +123,34 @@ expect_exit() {
     [ "$code" -eq "$2" ] || { echo "код выхода $code вместо $2"; return 1; }
 }
 
+# current_json <файл> <id> <каталог>: current.json в том виде, в каком его пишет приложение (System.Text.Json):
+# отступы, \ и " экранированы, кириллица как есть, без перевода строки в конце. Каталог — уже в виде JSON,
+# если в нём нужны \uXXXX.
+current_json() {
+    local directory=${3//\\/\\\\}
+    directory=${directory//\"/\\\"}
+    printf '{\n  "id": "%s",\n  "name": "встреча",\n  "directory": "%s",\n  "startedAt": "2026-11-13T08:01:27.0395377+00:00"\n}' \
+        "$2" "$directory" > "$1"
+}
+
+# Причина, по которой тест не идёт в этой оболочке; пусто — идёт.
+skip_reason() {
+    [[ $OSTYPE == msys* || $OSTYPE == cygwin* ]] || return 1
+    case $1 in
+        install_*) echo "install-skill.sh — путь разработчика в WSL; в Windows скилл из рабочей копии — claude --plugin-dir" ;;
+        release_*) echo "release-version.sh — шаг выпуска на Linux-раннере" ;;
+        *) return 1 ;;
+    esac
+}
+
 # Тест идёт в этой же оболочке, а не в подоболочке: иначе его фоновые meeting-watch не остановить.
 run() {
-    local name=$1
+    local name=$1 reason
+    if reason=$(skip_reason "$name"); then
+        skipped=$((skipped + 1))
+        echo "skip  $name — $reason"
+        return 0
+    fi
     if "$name" > "$work/test.log" 2>&1; then
         passed=$((passed + 1))
         echo "ok    $name"
@@ -271,12 +305,41 @@ dir_WhenCurrentHasWindowsPath_TranslatesIt() {
 dir_WhenCurrentHasPosixPath_TakesItAsIs() {
     new_meeting
     mkdir -p "$work/posix-root"
-    jq -n --arg d "$meeting" '{ directory: $d }' > "$work/posix-root/current.json"
+    current_json "$work/posix-root/current.json" x "$meeting"
 
     local got
     got=$(MEETINGS_ROOT="$work/posix-root" bash "$bin/meeting-dir") || return 1
 
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
+}
+
+# Приложение пишет символы вне BMP суррогатной парой \uXXXX\uXXXX, кириллицу — как есть.
+dir_WhenCurrentHasEscapedWindowsPath_UnescapesIt() {
+    new_meeting
+    stub_wslpath
+    rm -f "$work/wslpath.calls"
+    mkdir -p "$work/escaped-root"
+    printf '{\n  "id": "x",\n  "directory": "D:\\\\Мои встречи\\\\2026_x \\uD83D\\uDE00 \\u0436",\n  "startedAt": "2026"\n}' \
+        > "$work/escaped-root/current.json"
+
+    local got
+    got=$(PATH="$work/stub:$PATH" MEETINGS_ROOT="$work/escaped-root" bash "$bin/meeting-dir") || return 1
+
+    [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
+    grep -qxF -- '-u D:\Мои встречи\2026_x 😀 ж' "$work/wslpath.calls" || { cat "$work/wslpath.calls"; return 1; }
+}
+
+dir_WhenCurrentHasEscapedQuotesAndSlashes_TakesDirectoryWhole() {
+    local quoted="$work/встреча \"a\" b"
+    mkdir -p "$quoted" "$work/quoted-root"
+    local escaped=${quoted//\"/\\\"}
+    escaped=${escaped//\//\\/}
+    printf '{\n  "id": "x",\n  "directory": "%s",\n  "name": "после"\n}' "$escaped" > "$work/quoted-root/current.json"
+
+    local got
+    got=$(MEETINGS_ROOT="$work/quoted-root" bash "$bin/meeting-dir") || return 1
+
+    [ "$got" = "$quoted" ] || { echo "получено: $got"; return 1; }
 }
 
 dir_WhenArgumentGiven_TranslatesWindowsPathWithoutCurrent() {
@@ -312,7 +375,7 @@ dir_WhenRootOnlyInWindows_TakesItFromRegistry() {
     mkdir -p "$work/stub" "$work/registry-root"
     printf '#!/usr/bin/env bash\necho "$*" >> "%s/wslpath.calls"\necho "%s/registry-root"\n' "$work" "$work" > "$work/stub/wslpath"
     chmod +x "$work/stub/wslpath"
-    jq -n --arg d "$meeting" '{ directory: $d }' > "$work/registry-root/current.json"
+    current_json "$work/registry-root/current.json" x "$meeting"
 
     local got
     got=$(PATH="$work/stub-reg:$work/stub:$PATH" MEETINGS_ROOT="" bash "$bin/meeting-dir") || return 1
@@ -326,7 +389,7 @@ dir_WhenMeetingsRootSet_PrefersItOverRegistry() {
     stub_reg "$work/registry-only"
     mkdir -p "$work/registry-only" "$work/own-root"
     echo '{ "directory": "/nonexistent" }' > "$work/registry-only/current.json"
-    jq -n --arg d "$meeting" '{ directory: $d }' > "$work/own-root/current.json"
+    current_json "$work/own-root/current.json" x "$meeting"
 
     local got
     got=$(PATH="$work/stub-reg:$PATH" MEETINGS_ROOT="$work/own-root" bash "$bin/meeting-dir") || return 1
@@ -340,7 +403,7 @@ dir_WhenRootIsWindowsPath_TranslatesIt() {
     printf '#!/usr/bin/env bash\necho "%s/win-root"\n' "$work" > "$work/stub/wslpath"
     chmod +x "$work/stub/wslpath"
     mkdir -p "$work/win-root"
-    jq -n --arg d "$meeting" '{ directory: $d }' > "$work/win-root/current.json"
+    current_json "$work/win-root/current.json" x "$meeting"
 
     local got
     got=$(PATH="$work/stub:$PATH" MEETINGS_ROOT='D:\meetings' bash "$bin/meeting-dir") || return 1
@@ -382,7 +445,7 @@ EOF
 start_WhenNewMeetingAppears_PrintsItsDirectoryAndPassesName() {
     new_meeting
     stub_start
-    jq -n --arg d "$meeting" '{ id: "new", directory: $d }' > "$work/start.next"
+    current_json "$work/start.next" new "$meeting"
 
     local got
     got=$(PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=5 \
@@ -413,7 +476,7 @@ start_WhenNoNewMeeting_FailsInsteadOfTakingPrevious() {
 start_WhenGlossaryGiven_PassesItAsWindowsPath() {
     new_meeting
     stub_start
-    jq -n --arg d "$meeting" '{ id: "new", directory: $d }' > "$work/start.next"
+    current_json "$work/start.next" new "$meeting"
     printf '#!/usr/bin/env bash\necho "D:\\\\glossary.txt"\n' > "$work/stub-start/wslpath"
     chmod +x "$work/stub-start/wslpath"
     touch "$work/glossary.txt"
@@ -471,7 +534,7 @@ refine_WhenNoDirectoryGiven_TakesCurrentMeeting() {
     end_of_recording 0
     stub_refine
     mkdir -p "$work/refine-root"
-    jq -n --arg d "$meeting" '{ id: "x", directory: $d }' > "$work/refine-root/current.json"
+    current_json "$work/refine-root/current.json" x "$meeting"
 
     local got
     got=$(PATH="$work/stub-refine:$PATH" MEETINGS_ROOT="$work/refine-root" timeout 5 bash "$bin/meeting-refine") || return 1
@@ -732,13 +795,13 @@ models_WhenWhisperFileNamedInThreePlaces_NamesMatch() {
 release_WhenPluginVersionMatchesTag_PrintsVersion() {
     printf '{ "name": "meeting", "version": "1.2.3" }\n' > "$work/plugin.json"
     local got
-    got=$(bash "$repo/scripts/release-version.sh" v1.2.3 "$work/plugin.json") || return 1
+    got=$(PATH="$path_with_jq" bash "$repo/scripts/release-version.sh" v1.2.3 "$work/plugin.json") || return 1
     [ "$got" = "1.2.3" ] || { echo "получено: $got"; return 1; }
 }
 
 release_WhenPluginVersionDiffers_Refuses() {
     printf '{ "name": "meeting", "version": "1.2.2" }\n' > "$work/plugin.json"
-    if bash "$repo/scripts/release-version.sh" v1.2.3 "$work/plugin.json" > /dev/null 2>&1; then
+    if PATH="$path_with_jq" bash "$repo/scripts/release-version.sh" v1.2.3 "$work/plugin.json" > /dev/null 2>&1; then
         echo "отказа нет"
         return 1
     fi
@@ -748,7 +811,7 @@ release_WhenTagIsNotVersion_Refuses() {
     printf '{ "name": "meeting", "version": "1.2.3" }\n' > "$work/plugin.json"
     local tag
     for tag in 1.2.3 v1.2 release-1.2.3; do
-        if bash "$repo/scripts/release-version.sh" "$tag" "$work/plugin.json" > /dev/null 2>&1; then
+        if PATH="$path_with_jq" bash "$repo/scripts/release-version.sh" "$tag" "$work/plugin.json" > /dev/null 2>&1; then
             echo "отказа нет: $tag"
             return 1
         fi
@@ -759,5 +822,5 @@ for test in $(declare -F | awk '{ print $3 }' | grep -E '^[a-z]+_When'); do
     run "$test"
 done
 
-echo "итого: $((passed + failed)), упало: $failed"
+echo "итого: $((passed + failed + skipped)), упало: $failed, пропущено: $skipped"
 [ "$failed" -eq 0 ]
