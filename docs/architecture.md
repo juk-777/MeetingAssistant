@@ -236,8 +236,9 @@ Claude Code держит копию в своём кеше; в рабочей к
   строковое поле JSON с экранированием, эмодзи — суррогатной парой `\uXXXX\uXXXX`.
 - **Где идёт сессия.** Claude Code в WSL или прямо в Windows: там скрипты выполняет Git Bash (без него у Claude Code
   в Windows нет `Monitor`). Путь для окна Windows — `windows-path`: `cygpath -w` в Git Bash, `wslpath -w` в WSL;
-  неявному переводу Git Bash, который из `/c/x` делает `C:/x`, скрипты не доверяют. Тесты скилла идут в обеих
-  оболочках.
+  неявному переводу Git Bash, который из `/c/x` делает `C:/x`, скрипты не доверяют. Git Bash у Claude Code
+  в Windows запущен с выключенным Ctrl+C, и флаг наследуют потомки, поэтому `meeting-start` и `meeting-refine`
+  снимают его перед открытием окна. Тесты скилла идут в обеих оболочках.
 - **Запуск записи из сессии.** `/meeting start <имя> [словарь]` — `meeting-start` открывает окно `meeting start`
   (`powershell.exe` → `cmd.exe /c`, окно ждёт клавишу и при отказе, и после Ctrl+C: видны причина или итог с CPU
   и памятью), ждёт `current.json`
