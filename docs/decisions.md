@@ -218,6 +218,22 @@ WASAPI-захват проверяется живым проходом.
 - **Нет приложения — скилл предлагает поставить** (код выхода 3 у `meeting-dir` и `meeting-start`, `meeting-install`).
 - **Ветки и pull request, `develop` нет** (#17): `main` защищена, обязательная проверка `test`, выпуски — теги.
 
+## Скилл в Claude Code для Windows — те же bash-скрипты в Git Bash
+
+Спека — `docs/specs/2026-11-13-skill-windows.md` (#15).
+
+- **Одна копия скриптов на bash для WSL и Git Bash.** Без Git Bash у Claude Code для Windows нет `Monitor`, на нём
+  держится пробуждение, — переписывать скрипты на PowerShell незачем. Отвергнуто: вторая копия на PowerShell.
+- **Без `jq`:** его нет в Git for Windows. `current.json` читает `current-field` на bash — плоский объект
+  со строковыми полями, который пишет само приложение. Отвергнуто: требовать `jq`, `ConvertFrom-Json` на каждом такте
+  ожидания встречи.
+- **Граница с Windows — явная:** путь для окна — `cygpath -w` или `wslpath -w`; переменные `MEETING_*` исключены
+  из перевода путей Git Bash (`MSYS2_ENV_CONV_EXCL`): значение на `/` он превращает в `C:/Program Files/Git/…`.
+- **Окно — с включённым Ctrl+C:** Claude Code для Windows запускает Git Bash новой группой процессов, Ctrl+C
+  выключен у всех потомков; `meeting-start` и `meeting-refine` снимают флаг перед `Start-Process`. Отвергнуто:
+  снимать в `meeting.exe` — правка приложения и релиза ради того, что чинится в скрипте.
+- **Тесты скилла — в обеих оболочках:** CI на `windows-latest`, `jq` в прогоне запрещён заглушкой.
+
 ## Задача — GitHub Issue, решения и этапы — в `docs/`
 
 Issue держит постановку и ссылки; спека слайса (`docs/specs/`) и план (`docs/plans/`) версионируются вместе
