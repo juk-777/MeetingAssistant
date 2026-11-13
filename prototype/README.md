@@ -20,6 +20,12 @@ uv venv -q -p 3.12 .venv && uv pip install -q -p .venv sherpa-onnx==2.0.1 numpy
 - `delta.sh` — новые строки транскрипта с прошлого вызова (смещение в `live/.offset`).
 - `hint.sh <epoch события> <текст|SKIP>` — фиксирует подсказку и задержку от события в `live/hints.md`.
 - `wnet/` — Whisper.net 1.9.1 по фразам из `seg/`: `dotnet run -c Release -- <seg/имя> <ggml-модель> <выход> <потоки> [prompt]`.
+- `rnnt.py <seg/имя> <выход> <greedy|beam> [словарь] [сила]` — GigaAM v3 RNNT с пунктуацией по фразам из `seg/`;
+  со словарём — hotwords (только `beam`). Потоки — `THREADS` (8).
+- `spm2vocab.py <tokenizer.model> > <bpe.vocab>` — словарь токенизатора GigaAM для hotwords (`docs/measurements.md`,
+  «Модели»).
+- `glossary_check.py <словарь> <вывод>... [--hits]` — слова, термины словаря и повторы подряд по выводам
+  распознавания (`docs/measurements.md`, «Термины словаря в распознавании»).
 - `terms-reading.txt` — текст для замера английских терминов (читается вслух, запись — в `samples/`),
   `terms-reading.terms.txt` — эталонный список терминов по порядку (`docs/measurements.md`, «Английские термины»).
 - `channel_offset.py <audio.wav> [окно, с] [шаг, с]` — смещение каналов встречи по взаимной корреляции, когда

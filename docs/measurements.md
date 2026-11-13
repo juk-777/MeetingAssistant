@@ -280,6 +280,15 @@ Whisper (p50 72 знака), а не фраза.
 curl -sSLO https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-t-one-russian-2025-09-08.tar.bz2
 ```
 
+Только для замера словаря — GigaAM v3 RNNT с пунктуацией (162 МБ в архиве) и его токенизатор: `tokenizer.model`
+из `ai-sage/GigaAM-v3` на Hugging Face, ветка `e2e_rnnt` (коммит `7655ad7`, SHA-256 `828c12c9…`), кладётся в каталог
+модели, рядом — `bpe.vocab` от `prototype/spm2vocab.py`:
+
+```
+curl -sSLO https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16.tar.bz2
+curl -sSL -o tokenizer.model https://huggingface.co/ai-sage/GigaAM-v3/resolve/7655ad717f8122257385bb4b2f373db3697e8680/tokenizer.model
+```
+
 `bzip2` в WSL нет — распаковка через Python: `python3 -c "import tarfile;tarfile.open('<файл>').extractall('models')"`.
 
 Whisper — репозиторий `ggerganov/whisper.cpp` на Hugging Face, ревизия закреплена. Turbo
