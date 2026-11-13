@@ -14,8 +14,7 @@
 # meeting-dir --root — сам корень встреч, локальным путём (его ждёт meeting-start)
 set -euo pipefail
 
-# Путь к скрипту из Claude Code в Windows бывает с обратными косыми: dirname делит только по прямой.
-here="$(cd "$(dirname "${0//\\//}")" && pwd)"
+here="$(cd "$(dirname "$0")" && pwd)"
 
 fail() {
     printf '%s\n' "$1" >&2

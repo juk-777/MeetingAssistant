@@ -24,8 +24,7 @@ fail() {
 [[ $1 != *[\"%]* && $1 != *\\ ]] ||
     fail "Имя встречи — без двойных кавычек, % и \\ в конце: их разбирает командная строка Windows."
 
-# Путь к скрипту из Claude Code в Windows бывает с обратными косыми: dirname делит только по прямой.
-here="$(cd "$(dirname "${0//\\//}")" && pwd)"
+here="$(cd "$(dirname "$0")" && pwd)"
 command -v powershell.exe > /dev/null || fail "Нет powershell.exe: запись запускается только под Windows (из WSL или Git Bash)."
 
 root=$(bash "$here/meeting-dir" --root)

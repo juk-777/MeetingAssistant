@@ -545,7 +545,8 @@ refine_WhenCygpathPresent_PassesItsWindowsPathToWindow() {
     grep -qxF -- "-w $meeting" "$work/paths.calls" || { cat "$work/paths.calls"; return 1; }
 }
 
-# Claude Code в Windows называет каталог скилла путём Windows: скрипт, вызванный по нему, находит соседей.
+# Claude Code в Windows называет каталог скилла путём Windows: скрипт, вызванный по нему, находит соседей
+# (dirname Git Bash делит путь и по \).
 scripts_WhenCalledByWindowsPath_FindNeighbours() {
     new_meeting
     end_of_recording 0
