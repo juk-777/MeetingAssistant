@@ -735,9 +735,8 @@ appversion_WhenNoPluginManifest_PassesWithoutAsking() {
     [ ! -f "$work/version.calls" ] || { echo "версию спросили"; return 1; }
 }
 
-# Путь разработчика: скилл — ссылкой на каталог скилла в рабочей копии (install-skill.sh); по логическому пути
-# plugin.json не найти.
-appversion_WhenSkillLinked_FindsPluginByPhysicalPath() {
+# Путь разработчика: скилл — ссылкой на каталог скилла в рабочей копии (install-skill.sh).
+appversion_WhenSkillLinked_FindsPluginManifest() {
     plugin_copy 0.2.5
     rm -rf "$work/stub-version" "$work/linked"
     stub_app_version "$work/stub-version" 0.2.4

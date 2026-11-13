@@ -14,9 +14,9 @@ set -euo pipefail
 
 [ "${MEETING_ANY_APP_VERSION:-}" != 1 ] || exit 0
 
-# Физический путь: у разработчика скилл стоит ссылкой ~/.claude/skills/meeting на рабочую копию, и по логическому
-# пути три каталога вверх — ~/.claude, а не плагин.
-here="$(cd "$(dirname "$0")" && pwd -P)"
+# plugin.json — тремя каталогами выше скриптов. Путь открывает система: «..» после ссылки на каталог скилла
+# (install-skill.sh) ведёт в рабочую копию, а не туда, где лежит ссылка.
+here="$(cd "$(dirname "$0")" && pwd)"
 version_pattern='^([0-9]+)\.([0-9]+)\.([0-9]+)$'
 
 plugin=$(bash "$here/current-field" "$here/../../../.claude-plugin/plugin.json" version 2>/dev/null) || exit 0
