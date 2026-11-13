@@ -141,6 +141,7 @@ skip_reason() {
         case $1 in
             install_*) echo "install-skill.sh — путь разработчика в WSL; в Windows скилл из рабочей копии — claude --plugin-dir" ;;
             release_*) echo "release-version.sh — шаг выпуска на Linux-раннере" ;;
+            *_WhenSkillLinked_*) echo "ссылка на скилл — путь разработчика в WSL (install-skill.sh); ln -s Git Bash копирует" ;;
             *) return 1 ;;
         esac
     else
@@ -641,6 +642,151 @@ refine_WhenRootNotSet_ExitsAsNotInstalled() {
     local code=0
     PATH="$work/stub-reg:$PATH" MEETINGS_ROOT="" timeout 5 bash "$bin/meeting-refine" > /dev/null 2>&1 || code=$?
     [ "$code" -eq 3 ] || { echo "код: $code"; return 1; }
+}
+
+# plugin_copy <версия>: скрипты скилла в раскладке плагина, как их ставит Claude Code, — plugin.json тремя
+# каталогами выше скриптов. Скрипты — в $work/plugin/skills/meeting/scripts.
+plugin_copy() {
+    rm -rf "$work/plugin"
+    mkdir -p "$work/plugin/.claude-plugin" "$work/plugin/skills/meeting"
+    cp -r "$bin" "$work/plugin/skills/meeting/scripts"
+    printf '{\n  "name": "meeting",\n  "version": "%s",\n  "description": "x"\n}\n' "$1" > "$work/plugin/.claude-plugin/plugin.json"
+}
+
+# stub_app_version <каталог> <версия>: вызов powershell.exe с --version (сверка) отвечает версией строкой Windows
+# (\r\n) и кодом STUB_VERSION_CODE, вызов дописывается в version.calls; остальные вызовы (окно) идут в заглушку,
+# которая уже лежала в каталоге.
+stub_app_version() {
+    mkdir -p "$1"
+    [ ! -f "$1/powershell.exe" ] || mv "$1/powershell.exe" "$1/window.stub"
+    rm -f "$work/version.calls"
+    printf '%s\r\n' "$2" > "$1/app.version"
+    cat > "$1/powershell.exe" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+    *--version*) echo x >> "$work/version.calls"; cat "$1/app.version"; exit \${STUB_VERSION_CODE:-0} ;;
+esac
+[ ! -f "$1/window.stub" ] || exec bash "$1/window.stub" "\$@"
+EOF
+    chmod +x "$1/powershell.exe"
+}
+
+# check_version <приложение> <плагин>: сверка из копии плагина; код — в version.code, отказ — в version.err.
+check_version() {
+    plugin_copy "$2"
+    rm -rf "$work/stub-version"
+    stub_app_version "$work/stub-version" "$1"
+    local code=0
+    PATH="$work/stub-version:$PATH" timeout 5 bash "$work/plugin/skills/meeting/scripts/check-app-version" \
+        > /dev/null 2> "$work/version.err" || code=$?
+    echo "$code" > "$work/version.code"
+}
+
+appversion_WhenAppOlderThanPlugin_RefusesWithBothVersions() {
+    local pair app plugin
+    for pair in '0.2.9 0.2.10' '0.1.9 0.2.0' '0.9.9 1.0.0' '0.2.3 0.2.4'; do
+        app=${pair% *} plugin=${pair#* }
+        check_version "$app" "$plugin"
+        [ "$(cat "$work/version.code")" -eq 4 ] || { echo "$pair: код $(cat "$work/version.code")"; return 1; }
+        grep -qF "записи $app старее скилла $plugin." "$work/version.err" && grep -q 'meeting-install' "$work/version.err" ||
+            { echo "$pair:"; cat "$work/version.err"; return 1; }
+    done
+}
+
+appversion_WhenAppSameOrNewerOrDevBuild_Passes() {
+    local pair
+    for pair in '0.2.4 0.2.4' '0.2.10 0.2.9' '1.0.0 0.9.9' '0.3.0 0.2.9' '0.0.0-dev 0.2.4'; do
+        check_version "${pair% *}" "${pair#* }"
+        [ "$(cat "$work/version.code")" -eq 0 ] || { echo "$pair: код $(cat "$work/version.code")"; cat "$work/version.err"; return 1; }
+        [ -f "$work/version.calls" ] || { echo "$pair: версию не спросили"; return 1; }
+    done
+}
+
+appversion_WhenVersionNotRecognized_RefusesWithCode4() {
+    local app
+    for app in '' '0.2' 'meeting 0.2.4' '0.2.4-beta'; do
+        check_version "$app" 0.2.4
+        [ "$(cat "$work/version.code")" -eq 4 ] || { echo "«$app»: код $(cat "$work/version.code")"; return 1; }
+        grep -q 'не распознать' "$work/version.err" || { echo "«$app»:"; cat "$work/version.err"; return 1; }
+    done
+}
+
+appversion_WhenAnyVersionAllowed_PassesWithoutAsking() {
+    plugin_copy 0.2.4
+    rm -rf "$work/stub-version"
+    stub_app_version "$work/stub-version" 0.1.0
+
+    PATH="$work/stub-version:$PATH" MEETING_ANY_APP_VERSION=1 timeout 5 \
+        bash "$work/plugin/skills/meeting/scripts/check-app-version" || return 1
+    [ ! -f "$work/version.calls" ] || { echo "версию спросили"; return 1; }
+}
+
+appversion_WhenAppNotInstalled_ExitsAsNotInstalled() {
+    STUB_VERSION_CODE=3 check_version '' 0.2.4
+    [ "$(cat "$work/version.code")" -eq 3 ] || { echo "код: $(cat "$work/version.code")"; return 1; }
+}
+
+# Скилл вне плагина (скрипты без plugin.json тремя каталогами выше) — сравнивать не с чем.
+appversion_WhenNoPluginManifest_PassesWithoutAsking() {
+    rm -rf "$work/stub-version"
+    stub_app_version "$work/stub-version" 0.0.1
+
+    PATH="$work/stub-version:$PATH" timeout 5 bash "$bin/check-app-version" || return 1
+    [ ! -f "$work/version.calls" ] || { echo "версию спросили"; return 1; }
+}
+
+# Путь разработчика: скилл — ссылкой на каталог скилла в рабочей копии (install-skill.sh); по логическому пути
+# plugin.json не найти.
+appversion_WhenSkillLinked_FindsPluginByPhysicalPath() {
+    plugin_copy 0.2.5
+    rm -rf "$work/stub-version" "$work/linked"
+    stub_app_version "$work/stub-version" 0.2.4
+    mkdir -p "$work/linked/skills"
+    ln -s "$work/plugin/skills/meeting" "$work/linked/skills/meeting"
+
+    local code=0
+    PATH="$work/stub-version:$PATH" timeout 5 bash "$work/linked/skills/meeting/scripts/check-app-version" \
+        > /dev/null 2>&1 || code=$?
+    [ "$code" -eq 4 ] || { echo "код: $code"; return 1; }
+}
+
+start_WhenAppOlderThanPlugin_RefusesBeforeWindow() {
+    plugin_copy 0.2.5
+    stub_start
+    stub_app_version "$work/stub-start" 0.2.4
+
+    local code=0
+    PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=5 \
+        timeout 15 bash "$work/plugin/skills/meeting/scripts/meeting-start" 'x' > /dev/null 2> "$work/start.err" || code=$?
+    [ "$code" -eq 4 ] || { echo "код: $code"; cat "$work/start.err"; return 1; }
+    [ ! -f "$work/start.args" ] || { echo "окно открыто"; return 1; }
+}
+
+start_WhenOlderAppAllowed_OpensWindow() {
+    new_meeting
+    plugin_copy 0.2.5
+    stub_start
+    stub_app_version "$work/stub-start" 0.2.4
+    current_json "$work/start.next" new "$meeting"
+
+    local got
+    got=$(PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=5 MEETING_ANY_APP_VERSION=1 \
+        timeout 15 bash "$work/plugin/skills/meeting/scripts/meeting-start" 'x') || return 1
+    [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
+}
+
+refine_WhenAppOlderThanPlugin_RefusesBeforeWindow() {
+    new_meeting
+    end_of_recording 0
+    plugin_copy 0.2.5
+    stub_refine
+    stub_app_version "$work/stub-refine" 0.2.4
+
+    local code=0
+    PATH="$work/stub-refine:$PATH" timeout 5 bash "$work/plugin/skills/meeting/scripts/meeting-refine" "$meeting" \
+        > /dev/null 2> "$work/refine.err" || code=$?
+    [ "$code" -eq 4 ] || { echo "код: $code"; cat "$work/refine.err"; return 1; }
+    [ ! -f "$work/refine.args" ] || { echo "окно открыто"; return 1; }
 }
 
 # Заглушка powershell.exe для meeting-install: пишет адрес релизов и команду, выходит с кодом из setup.code.
