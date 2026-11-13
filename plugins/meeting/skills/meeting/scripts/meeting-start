@@ -24,19 +24,18 @@ fail() {
 [[ $1 != *[\"%]* && $1 != *\\ ]] ||
     fail "Имя встречи — без двойных кавычек, % и \\ в конце: их разбирает командная строка Windows."
 
-here="$(cd "$(dirname "$0")" && pwd)"
+# Путь к скрипту из Claude Code в Windows бывает с обратными косыми: dirname делит только по прямой.
+here="$(cd "$(dirname "${0//\\//}")" && pwd)"
 command -v powershell.exe > /dev/null || fail "Нет powershell.exe: запись запускается только под Windows (из WSL или Git Bash)."
 
 root=$(bash "$here/meeting-dir" --root)
 previous=$(bash "$here/current-field" "$root/current.json" id 2>/dev/null || true)
-window_root=$root
-command -v wslpath > /dev/null && window_root=$(wslpath -w "$root")
+window_root=$(bash "$here/windows-path" "$root")
 
 glossary=""
 if [ $# -eq 2 ]; then
     [ -f "$2" ] || fail "Нет файла словаря: $2"
-    glossary=$2
-    command -v wslpath > /dev/null && glossary=$(wslpath -w "$2")
+    glossary=$(bash "$here/windows-path" "$2")
 fi
 
 # Имя, словарь и корень — переменными окружения, а не в командной строке PowerShell: кавычки и кириллица не ломают

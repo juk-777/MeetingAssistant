@@ -135,12 +135,18 @@ current_json() {
 
 # Причина, по которой тест не идёт в этой оболочке; пусто — идёт.
 skip_reason() {
-    [[ $OSTYPE == msys* || $OSTYPE == cygwin* ]] || return 1
-    case $1 in
-        install_*) echo "install-skill.sh — путь разработчика в WSL; в Windows скилл из рабочей копии — claude --plugin-dir" ;;
-        release_*) echo "release-version.sh — шаг выпуска на Linux-раннере" ;;
-        *) return 1 ;;
-    esac
+    if [[ $OSTYPE == msys* || $OSTYPE == cygwin* ]]; then
+        case $1 in
+            install_*) echo "install-skill.sh — путь разработчика в WSL; в Windows скилл из рабочей копии — claude --plugin-dir" ;;
+            release_*) echo "release-version.sh — шаг выпуска на Linux-раннере" ;;
+            *) return 1 ;;
+        esac
+    else
+        case $1 in
+            *_WhenCalledByWindowsPath_*) echo "путь Windows к скрипту бывает только в Git Bash" ;;
+            *) return 1 ;;
+        esac
+    fi
 }
 
 # Тест идёт в этой же оболочке, а не в подоболочке: иначе его фоновые meeting-watch не остановить.
@@ -282,16 +288,22 @@ watch_WhenTwoProjects_ReadIndependently() {
     expect_output "$work/b" $'начало\t1' "$(line 1)"
 }
 
-# Заглушка wslpath: переводит любой путь в каталог встречи и пишет, что её вызвали.
-stub_wslpath() {
-    mkdir -p "$work/stub"
-    printf '#!/usr/bin/env bash\necho "$*" >> "%s/wslpath.calls"\necho "%s"\n' "$work" "$meeting" > "$work/stub/wslpath"
-    chmod +x "$work/stub/wslpath"
+# stub_paths [каталог] [ответ]: заглушка перевода путей под обоими именами — cygpath (Git Bash) и wslpath (WSL),
+# так тест одинаков в обеих оболочках. Любой путь переводит в ответ (по умолчанию — каталог встречи), аргументы
+# дописывает в paths.calls.
+stub_paths() {
+    local dir=${1:-$work/stub} answer=${2:-$meeting} name
+    mkdir -p "$dir"
+    rm -f "$work/paths.calls"
+    for name in cygpath wslpath; do
+        printf '#!/usr/bin/env bash\necho "$*" >> "%s/paths.calls"\necho "%s"\n' "$work" "$answer" > "$dir/$name"
+        chmod +x "$dir/$name"
+    done
 }
 
 dir_WhenCurrentHasWindowsPath_TranslatesIt() {
     new_meeting
-    stub_wslpath
+    stub_paths
     mkdir -p "$work/root"
     printf '{ "directory": "D:\\\\meetings\\\\2026-11-10_10-00-00_x" }\n' > "$work/root/current.json"
 
@@ -299,7 +311,7 @@ dir_WhenCurrentHasWindowsPath_TranslatesIt() {
     got=$(PATH="$work/stub:$PATH" MEETINGS_ROOT="$work/root" bash "$bin/meeting-dir") || return 1
 
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
-    grep -qxF -- '-u D:\meetings\2026-11-10_10-00-00_x' "$work/wslpath.calls" || { cat "$work/wslpath.calls"; return 1; }
+    grep -qxF -- '-u D:\meetings\2026-11-10_10-00-00_x' "$work/paths.calls" || { cat "$work/paths.calls"; return 1; }
 }
 
 dir_WhenCurrentHasPosixPath_TakesItAsIs() {
@@ -316,8 +328,7 @@ dir_WhenCurrentHasPosixPath_TakesItAsIs() {
 # Приложение пишет символы вне BMP суррогатной парой \uXXXX\uXXXX, кириллицу — как есть.
 dir_WhenCurrentHasEscapedWindowsPath_UnescapesIt() {
     new_meeting
-    stub_wslpath
-    rm -f "$work/wslpath.calls"
+    stub_paths
     mkdir -p "$work/escaped-root"
     printf '{\n  "id": "x",\n  "directory": "D:\\\\Мои встречи\\\\2026_x \\uD83D\\uDE00 \\u0436",\n  "startedAt": "2026"\n}' \
         > "$work/escaped-root/current.json"
@@ -326,7 +337,7 @@ dir_WhenCurrentHasEscapedWindowsPath_UnescapesIt() {
     got=$(PATH="$work/stub:$PATH" MEETINGS_ROOT="$work/escaped-root" bash "$bin/meeting-dir") || return 1
 
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
-    grep -qxF -- '-u D:\Мои встречи\2026_x 😀 ж' "$work/wslpath.calls" || { cat "$work/wslpath.calls"; return 1; }
+    grep -qxF -- '-u D:\Мои встречи\2026_x 😀 ж' "$work/paths.calls" || { cat "$work/paths.calls"; return 1; }
 }
 
 dir_WhenCurrentHasEscapedQuotesAndSlashes_TakesDirectoryWhole() {
@@ -344,7 +355,7 @@ dir_WhenCurrentHasEscapedQuotesAndSlashes_TakesDirectoryWhole() {
 
 dir_WhenArgumentGiven_TranslatesWindowsPathWithoutCurrent() {
     new_meeting
-    stub_wslpath
+    stub_paths
 
     local got
     got=$(PATH="$work/stub:$PATH" MEETINGS_ROOT="" bash "$bin/meeting-dir" 'D:\meetings\x') || return 1
@@ -371,17 +382,15 @@ dir_WhenRootNotSet_ExitsAsNotInstalled() {
 dir_WhenRootOnlyInWindows_TakesItFromRegistry() {
     new_meeting
     stub_reg 'D:\Мои встречи'
-    rm -f "$work/wslpath.calls"
-    mkdir -p "$work/stub" "$work/registry-root"
-    printf '#!/usr/bin/env bash\necho "$*" >> "%s/wslpath.calls"\necho "%s/registry-root"\n' "$work" "$work" > "$work/stub/wslpath"
-    chmod +x "$work/stub/wslpath"
+    stub_paths "$work/stub" "$work/registry-root"
+    mkdir -p "$work/registry-root"
     current_json "$work/registry-root/current.json" x "$meeting"
 
     local got
     got=$(PATH="$work/stub-reg:$work/stub:$PATH" MEETINGS_ROOT="" bash "$bin/meeting-dir") || return 1
 
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
-    grep -qxF -- '-u D:\Мои встречи' "$work/wslpath.calls" || { cat "$work/wslpath.calls"; return 1; }
+    grep -qxF -- '-u D:\Мои встречи' "$work/paths.calls" || { cat "$work/paths.calls"; return 1; }
 }
 
 dir_WhenMeetingsRootSet_PrefersItOverRegistry() {
@@ -399,9 +408,7 @@ dir_WhenMeetingsRootSet_PrefersItOverRegistry() {
 
 dir_WhenRootIsWindowsPath_TranslatesIt() {
     new_meeting
-    mkdir -p "$work/stub"
-    printf '#!/usr/bin/env bash\necho "%s/win-root"\n' "$work" > "$work/stub/wslpath"
-    chmod +x "$work/stub/wslpath"
+    stub_paths "$work/stub" "$work/win-root"
     mkdir -p "$work/win-root"
     current_json "$work/win-root/current.json" x "$meeting"
 
@@ -455,9 +462,7 @@ start_WhenNewMeetingAppears_PrintsItsDirectoryAndPassesName() {
     [ "$(head -1 "$work/start.args")" = 'Встреча с партнёром' ] || { cat "$work/start.args"; return 1; }
 
     # Окну передан тот корень, где ждали встречу, — в виде, понятном Windows.
-    local root="$work/start-root"
-    ! command -v wslpath > /dev/null || root=$(wslpath -w "$root")
-    [ "$(sed -n 3p "$work/start.args")" = "$root" ] || { cat "$work/start.args"; return 1; }
+    [ "$(sed -n 3p "$work/start.args")" = "$(windows_path "$work/start-root")" ] || { cat "$work/start.args"; return 1; }
 }
 
 start_WhenNoNewMeeting_FailsInsteadOfTakingPrevious() {
@@ -473,18 +478,20 @@ start_WhenNoNewMeeting_FailsInsteadOfTakingPrevious() {
     grep -q 'окне meeting' "$work/start.err" || { cat "$work/start.err"; return 1; }
 }
 
-start_WhenGlossaryGiven_PassesItAsWindowsPath() {
+start_WhenGlossaryGiven_PassesItAndRootAsWindowsPaths() {
     new_meeting
     stub_start
     current_json "$work/start.next" new "$meeting"
-    printf '#!/usr/bin/env bash\necho "D:\\\\glossary.txt"\n' > "$work/stub-start/wslpath"
-    chmod +x "$work/stub-start/wslpath"
+    stub_paths "$work/stub-start" 'C:\Windows-путь'
     touch "$work/glossary.txt"
 
     PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=5 \
         timeout 15 bash "$bin/meeting-start" 'x' "$work/glossary.txt" > /dev/null || return 1
 
-    [ "$(sed -n 2p "$work/start.args")" = 'D:\glossary.txt' ] || { cat "$work/start.args"; return 1; }
+    [ "$(sed -n 2p "$work/start.args")" = 'C:\Windows-путь' ] && [ "$(sed -n 3p "$work/start.args")" = 'C:\Windows-путь' ] ||
+        { cat "$work/start.args"; return 1; }
+    grep -qxF -- "-w $work/glossary.txt" "$work/paths.calls" && grep -qxF -- "-w $work/start-root" "$work/paths.calls" ||
+        { cat "$work/paths.calls"; return 1; }
 }
 
 start_WhenAppNotInstalled_ExitsAsNotInstalledWithoutWaiting() {
@@ -513,7 +520,52 @@ stub_refine() {
 }
 
 windows_path() {
-    if command -v wslpath > /dev/null; then wslpath -w "$1"; else printf '%s\n' "$1"; fi
+    if command -v cygpath > /dev/null; then
+        cygpath -w "$1"
+    elif command -v wslpath > /dev/null; then
+        wslpath -w "$1"
+    else
+        printf '%s\n' "$1"
+    fi
+}
+
+# Только cygpath, как в Git Bash: в WSL рядом настоящий wslpath, и путь от него заглушку не обманет.
+refine_WhenCygpathPresent_PassesItsWindowsPathToWindow() {
+    new_meeting
+    end_of_recording 0
+    stub_refine
+    stub_paths "$work/stub-paths" 'C:\встречи\x'
+    rm "$work/stub-paths/wslpath"
+
+    local got
+    got=$(PATH="$work/stub-refine:$work/stub-paths:$PATH" timeout 5 bash "$bin/meeting-refine" "$meeting") || return 1
+
+    [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
+    [ "$(cat "$work/refine.args")" = 'C:\встречи\x' ] || { cat "$work/refine.args"; return 1; }
+    grep -qxF -- "-w $meeting" "$work/paths.calls" || { cat "$work/paths.calls"; return 1; }
+}
+
+# Claude Code в Windows называет каталог скилла путём Windows: скрипт, вызванный по нему, находит соседей.
+scripts_WhenCalledByWindowsPath_FindNeighbours() {
+    new_meeting
+    end_of_recording 0
+    local scripts got
+    scripts=$(cygpath -w "$bin")
+
+    mkdir -p "$work/backslash-root"
+    current_json "$work/backslash-root/current.json" x "$meeting"
+    got=$(MEETINGS_ROOT="$work/backslash-root" bash "$scripts\\meeting-dir") || return 1
+    [ "$got" = "$meeting" ] || { echo "meeting-dir: $got"; return 1; }
+
+    stub_refine
+    got=$(PATH="$work/stub-refine:$PATH" timeout 5 bash "$scripts\\meeting-refine" "$meeting") || return 1
+    [ "$got" = "$meeting" ] || { echo "meeting-refine: $got"; return 1; }
+
+    stub_start
+    current_json "$work/start.next" new "$meeting"
+    got=$(PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=5 \
+        timeout 15 bash "$scripts\\meeting-start" 'x') || return 1
+    [ "$got" = "$meeting" ] || { echo "meeting-start: $got"; return 1; }
 }
 
 refine_WhenFinishedMeetingGiven_OpensWindowForItAndPrintsIt() {

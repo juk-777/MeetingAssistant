@@ -20,7 +20,8 @@ fail() {
 
 [ $# -le 1 ] || { echo "meeting-refine [каталог встречи]" >&2; exit 2; }
 
-here="$(cd "$(dirname "$0")" && pwd)"
+# Путь к скрипту из Claude Code в Windows бывает с обратными косыми: dirname делит только по прямой.
+here="$(cd "$(dirname "${0//\\//}")" && pwd)"
 command -v powershell.exe > /dev/null || fail "Нет powershell.exe: уточнение запускается только под Windows (из WSL или Git Bash)."
 
 # Отказ meeting-dir (код 3 — не установлено) выходит отсюда с тем же кодом.
@@ -28,8 +29,7 @@ dir=$(bash "$here/meeting-dir" "$@")
 grep -q $'\tконец записи$' "$dir/events.log" 2>/dev/null ||
     fail "Запись встречи $dir не закончена: в events.log нет «конец записи». Остановите запись (Ctrl+C в окне meeting) и повторите."
 
-window_dir=$dir
-command -v wslpath > /dev/null && window_dir=$(wslpath -w "$dir")
+window_dir=$(bash "$here/windows-path" "$dir")
 
 # Каталог — переменной окружения, а не в командной строке PowerShell: кавычки и кириллица не ломают команду.
 export MEETING_REFINE_DIR=$window_dir
