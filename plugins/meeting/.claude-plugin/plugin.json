@@ -1,6 +1,6 @@
 {
   "name": "meeting",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Подсказки рабочей сессии Claude Code на созвоне: запись встречи, транскрипт, подсказки по событиям, уточнение транскрипта Whisper, протокол.",
   "author": { "name": "juk-777" },
   "homepage": "https://github.com/juk-777/MeetingAssistant",

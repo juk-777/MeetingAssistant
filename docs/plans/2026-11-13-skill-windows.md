@@ -65,7 +65,7 @@ Windows с `\\`, кириллица, эмодзи `😀`, `\"` в имени). �
 `docs/architecture.md`: перевод путей, чтение `current.json`. `docs/development.md`: прогон тестов скилла под Git
 Bash. Версия плагина — 0.2.3.
 
-**Готово, когда:** `grep -rn jq` по README, `docs/architecture.md`, `docs/development.md` и скиллу пуст;
+**Готово, когда:** `jq` в README и `docs/` остался только в требованиях разработки (шаг выпуска), в скилле его нет;
 `tests/meeting-skill/run.sh` зелёный (тест версий моделей и имён файлов).
 
 ## 6. Живая проверка в Claude Code для Windows

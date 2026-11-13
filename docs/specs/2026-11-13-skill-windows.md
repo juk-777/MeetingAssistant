@@ -139,7 +139,8 @@ Bash выполняет Git Bash из Git for Windows. Там скилл не п
    - после Ctrl+C приходит `конец записи`;
    - `/meeting уточни` открывает окно уточнения на этой встрече;
    - `/meeting протокол` пишет `protocol.md`.
-4. В README есть вариант «Claude Code в Windows», а `jq` не упомянут нигде в требованиях. `docs/architecture.md`
+4. В README есть вариант «Claude Code в Windows», а `jq` не упомянут в требованиях скилла (для разработки в WSL
+   он остаётся: на нём шаг выпуска `release-version.sh` и его тесты). `docs/architecture.md`
    описывает перевод путей и чтение `current.json` без `jq`. В `SKILL.md` скрипты запускаются инструментом Bash.
    Версия плагина — 0.2.3.
 
