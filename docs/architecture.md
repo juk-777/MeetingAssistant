@@ -3,11 +3,65 @@
 Две части: приложение записи под Windows и скилл `/meeting` для Claude Code; подсказка показывается уведомлением
 Windows и в терминале сессии. Связь между частями — только файлы в каталоге встречи.
 
+Во время встречи:
+
+```mermaid
+flowchart LR
+    mic["Микрофон<br/>канал «Я»"]
+    loopback["Системный звук<br/>канал «Собеседники»"]
+
+    subgraph app["meeting start — Windows"]
+        capture["Захват WASAPI<br/>16 кГц моно на канал"]
+        vad["Silero VAD<br/>фразы по паузам"]
+        asr["GigaAM v3 CTC<br/>распознавание на CPU"]
+    end
+
+    subgraph folder["Каталог встречи"]
+        wav[("audio.wav")]
+        transcript[("transcript.md")]
+        events[("events.log")]
+        hints[("hints.md")]
+    end
+
+    subgraph session["Сессия Claude Code проекта — /meeting"]
+        watch["meeting-watch<br/>под Monitor"]
+        claude["Claude<br/>код, доки, issue"]
+    end
+
+    toast["Уведомление Windows<br/>и терминал"]
+
+    mic --> capture
+    loopback --> capture
+    capture --> wav
+    capture --> vad --> asr
+    asr --> transcript
+    asr --> events
+    events -->|"событие"| watch
+    transcript -->|"новые строки"| watch
+    watch --> claude
+    claude -->|"подсказка или молчание"| hints
+    claude -->|"подсказка"| toast
 ```
-микрофон ───────WASAPI───────────┐
-                                  ├─ 16 кГц моно на канал ─ Silero VAD ─ GigaAM v3 CTC ─┬─ transcript.md
-системный звук ─WASAPI loopback──┘                                                     ├─ events.log ─meeting-watch─ Monitor ─ сессия Claude Code
-                                  └──────────────────────────────── audio.wav           └─ уведомление, hints.md ←┘
+
+После встречи:
+
+```mermaid
+flowchart LR
+    subgraph folder["Каталог встречи"]
+        wav[("audio.wav")]
+        transcript[("transcript.md<br/>GigaAM, вживую")]
+        whisper[("transcript.whisper.md")]
+        protocol[("protocol.md")]
+    end
+
+    refine["meeting refine — Windows<br/>Whisper turbo, фоном"]
+    claude["Сессия Claude Code<br/>/meeting протокол"]
+
+    wav -.->|"/meeting уточнить,<br/>по команде"| refine
+    refine -.-> whisper
+    transcript --> claude
+    whisper -.->|"если есть"| claude
+    claude --> protocol
 ```
 
 ## Структура кода: Clean Architecture + DDD
