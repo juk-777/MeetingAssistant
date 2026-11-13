@@ -684,7 +684,7 @@ check_version() {
 
 appversion_WhenAppOlderThanPlugin_RefusesWithBothVersions() {
     local pair app plugin
-    for pair in '0.2.9 0.2.10' '0.1.9 0.2.0' '0.9.9 1.0.0' '0.2.3 0.2.4'; do
+    for pair in '0.2.9 0.2.10' '0.1.9 0.2.0' '0.9.9 1.0.0' '0.2.3 0.2.4' '0.2.08 0.2.9'; do
         app=${pair% *} plugin=${pair#* }
         check_version "$app" "$plugin"
         [ "$(cat "$work/version.code")" -eq 4 ] || { echo "$pair: код $(cat "$work/version.code")"; return 1; }
@@ -724,6 +724,35 @@ appversion_WhenAnyVersionAllowed_PassesWithoutAsking() {
 appversion_WhenAppNotInstalled_ExitsAsNotInstalled() {
     STUB_VERSION_CODE=3 check_version '' 0.2.4
     [ "$(cat "$work/version.code")" -eq 3 ] || { echo "код: $(cat "$work/version.code")"; return 1; }
+}
+
+appversion_WhenVersionQueryFails_RefusesWithCode1() {
+    STUB_VERSION_CODE=1 check_version 0.2.4 0.2.4
+    [ "$(cat "$work/version.code")" -eq 1 ] || { echo "код: $(cat "$work/version.code")"; return 1; }
+    grep -q 'не узнать' "$work/version.err" || { cat "$work/version.err"; return 1; }
+}
+
+# Предрелиз плагина (не X.Y.Z) — сравнивать не по чему.
+appversion_WhenPluginVersionNotRelease_PassesWithoutAsking() {
+    check_version 0.0.1 0.3.0-rc.1
+    [ "$(cat "$work/version.code")" -eq 0 ] || { echo "код: $(cat "$work/version.code")"; cat "$work/version.err"; return 1; }
+    [ ! -f "$work/version.calls" ] || { echo "версию спросили"; return 1; }
+}
+
+# Подключение к идущей встрече версию не сверяет: обновить приложение во время записи нельзя.
+dir_WhenPluginNewerThanApp_DoesNotAskVersion() {
+    new_meeting
+    plugin_copy 0.2.5
+    rm -rf "$work/stub-version"
+    stub_app_version "$work/stub-version" 0.0.1
+    mkdir -p "$work/dir-root"
+    current_json "$work/dir-root/current.json" x "$meeting"
+
+    local got
+    got=$(PATH="$work/stub-version:$PATH" MEETINGS_ROOT="$work/dir-root" timeout 5 \
+        bash "$work/plugin/skills/meeting/scripts/meeting-dir") || return 1
+    [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
+    [ ! -f "$work/version.calls" ] || { echo "версию спросили"; return 1; }
 }
 
 # Скилл вне плагина (скрипты без plugin.json тремя каталогами выше) — сравнивать не с чем.
