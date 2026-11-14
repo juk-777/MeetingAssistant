@@ -207,15 +207,17 @@ git clone https://github.com/juk-777/MeetingAssistant.git && cd MeetingAssistant
 Выпуск меняет обе части — и приложение записи, и скилл: обновлять их вместе. Скилл, который новее приложения,
 перед записью и уточнением скажет об этом сам и предложит обновить приложение.
 
-- Приложение записи — та же команда установки (из исходников — `install-wsl.sh` или `install.ps1 -FromSource`):
-  программа заменяется, корень встреч и модели остаются, недостающие модели (Whisper у установки до уточнения
-  встречи) докачиваются. Во время встречи — отказ.
+- Приложение записи — та же команда установки (из исходников — `install-wsl.sh`, `install.ps1 -FromSource` или
+  `install.sh --from-source`): программа заменяется, корень встреч и модели остаются, недостающие модели (Whisper
+  у установки до уточнения встречи) докачиваются. В Windows во время встречи — отказ; на Linux идущая запись
+  дорабатывает на прежней версии.
 - Скилл — в терминале
   `claude plugin marketplace update meeting-assistant && claude plugin update meeting@meeting-assistant`,
   затем перезапуск сессии Claude Code.
 - Удаление: `/plugin uninstall meeting@meeting-assistant` (или ссылка `~/.claude/skills/meeting`), каталог
   `%LOCALAPPDATA%\MeetingAssistant`, переменные пользователя `Storage__MeetingsRoot` и `Speech__ModelsDirectory`,
-  строка `…\MeetingAssistant\app` в `PATH` пользователя.
+  строка `…\MeetingAssistant\app` в `PATH` пользователя. На Linux — каталог `~/.local/share/meeting-assistant`,
+  ссылка `~/.local/bin/meeting` и блок `meeting-assistant` в `~/.profile`.
 
 ## Документы
 
