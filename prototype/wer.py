@@ -1,6 +1,7 @@
 """WER и CER вывода распознавания против эталона набора (`docs/measurements.md`, «Открытый набор»).
 
-Запуск: python wer.py <каталог seg> <вывод>... ; python wer.py --test — проверка счёта на известных входах.
+Запуск: python wer.py <каталог seg> <вывод>... ; python wer.py --pair <каталог seg> <вывод> <вывод> — по единицам,
+сколько второй вывод лучше и хуже первого; python wer.py --test — проверка счёта на известных входах.
 Каталог seg — от openstt.py: segments.json (отрезок VAD с номерами фраз набора, на которые он пришёлся) и
 clips.json (фразы с эталоном).
 Вывод — строки «[начало] текст» от ctc.py, rnnt.py или wnet; строка сопоставляется с отрезком по началу.
@@ -108,6 +109,7 @@ def test():
         ("одно слово из десяти", [(ten, ten.replace("пять", "пятью"))], 0.1),
         ("регистр, ё и знаки", [("ещё вопрос по базе", "Еще вопрос: по базе?!")], 0.0),
         ("число цифрами", [("два сервиса", "2 сервиса")], 0.0),
+        ("дробь цифрами", [("две целых пять десятых", "2,5")], 0.0),
         ("пустая гипотеза", [("три слова тут", "")], 1.0),
     ]
     failed = 0
@@ -116,13 +118,20 @@ def test():
         ok = abs(got - expected) < 1e-9
         failed += not ok
         print(f"{'ок ' if ok else 'НЕТ'} {name}: WER {got:.3f}, ждали {expected:.3f}")
-    marked = score([("питон и два", "Python и 3")])
-    ok = marked["errors"] == 2 and marked["marked"] == 2
+    got = score([("абв где", "абг где")])["cer"]
+    ok = abs(got - 1 / 7) < 1e-9
     failed += not ok
-    print(f"{'ок ' if ok else 'НЕТ'} латиница и цифры помечены: ошибок {marked['errors']}, помечено {marked['marked']}")
+    print(f"{'ок ' if ok else 'НЕТ'} одна буква из семи знаков: CER {got:.3f}, ждали {1 / 7:.3f}")
+    for name, pair in (("замена", ("питон и два", "Python и 3")), ("вставка", ("и два", "и Python два"))):
+        marked = score([pair])
+        expected = 2 if name == "замена" else 1
+        ok = marked["errors"] == expected and marked["marked"] == expected
+        failed += not ok
+        print(f"{'ок ' if ok else 'НЕТ'} латиница и цифры помечены, {name}: ошибок {marked['errors']}, "
+              f"помечено {marked['marked']}, ждали {expected}")
 
     # Фразы набора: 0 — два отрезка, 1 — один, 2 — без отрезков. Кусок turbo накрывает отрезки 0–1 фразы 0 и
-    # фразу 1; строка вне сетки начал (0.05) всё равно ложится на ближайший отрезок.
+    # фразу 1.
     with tempfile.TemporaryDirectory() as seg_dir:
         segments = [{"i": 0, "start": 0.0, "len": 1, "clip": 0, "last": 0},
                     {"i": 1, "start": 1.5, "len": 1, "clip": 0, "last": 0},
@@ -136,8 +145,9 @@ def test():
         ok = got == [("первая фраза вторая", "Первая фраза. Вторая."), ("третья", "")]
         failed += not ok
         print(f"{'ок ' if ok else 'НЕТ'} кусок из нескольких фраз и фраза без отрезков: {got}")
-        # Фраза 0 разрезана между двумя кусками: оба куска и обе их фразы — одна единица.
-        open(output, "w", encoding="utf-8").write("[   0.0] Первая\n[   1.5] фраза. Вторая.\n")
+        # Фраза 0 разрезана между двумя кусками: оба куска и обе их фразы — одна единица. Начало второго куска вне
+        # сетки начал (1.4 при отрезке с 1.5) ложится на ближайший отрезок, а не на предыдущий.
+        open(output, "w", encoding="utf-8").write("[   0.0] Первая\n[   1.4] фраза. Вторая.\n")
         got = list(units(seg_dir, output))
         ok = got == [("первая фраза вторая", "Первая фраза. Вторая."), ("третья", "")]
         failed += not ok
@@ -153,9 +163,30 @@ def test():
     return failed
 
 
+def pair(seg_dir, first, second):
+    """Сколько единиц второй вывод распознал лучше первого и сколько хуже: только для выводов с одной нарезкой."""
+    better = worse = 0
+    for (ref, a), (ref_b, b) in zip(units(seg_dir, first), units(seg_dir, second), strict=True):
+        if ref != ref_b:
+            sys.exit("Единицы выводов не совпадают: сравнение по фразам — только для одной нарезки.")
+        words = [w for w, _ in normalize(ref)]
+        errors_a = distance(words, [w for w, _ in normalize(a)])[0]
+        errors_b = distance(words, [w for w, _ in normalize(b)])[0]
+        better += errors_b < errors_a
+        worse += errors_b > errors_a
+    return better, worse
+
+
 if __name__ == "__main__":
-    if sys.argv[1] == "--test":
+    if len(sys.argv) == 2 and sys.argv[1] == "--test":
         sys.exit(test())
+    if len(sys.argv) == 5 and sys.argv[1] == "--pair":
+        better, worse = pair(*sys.argv[2:])
+        print(f"{os.path.basename(sys.argv[4])} против {os.path.basename(sys.argv[3])}: лучше в {better} единицах, "
+              f"хуже в {worse}")
+        sys.exit(0)
+    if len(sys.argv) < 3:
+        sys.exit("Запуск: python wer.py <seg/имя> <вывод>... | --pair <seg/имя> <вывод> <вывод> | --test")
     seg_dir = sys.argv[1]
     print("вывод\tслов\tWER\tCER\tошибок\tиз них цифры/латиница")
     for output in sys.argv[2:]:
