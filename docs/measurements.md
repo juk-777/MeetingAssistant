@@ -236,6 +236,43 @@ Whisper (p50 72 знака), а не фраза.
   - прогон WSL при load average ≈ 9 шёл 89.6 с;
   - первый прогон на Windows сразу после сборки дал max 8.41 с на фразу.
 
+## Живое распознавание: RNNT против CTC (`meeting replay`)
+
+Одна и та же запись прогоняется приложением на CTC и на RNNT (#39, спека `docs/specs/2026-11-14-rnnt-live.md`):
+`meeting replay <audio.wav> --speed 10`, без словаря, 2 потока распознавания, 14.11.2026.
+
+**Запись созвона `samples/call1.wav`, WSL.** Сборки Release: CTC — `main` до #39, RNNT — ветка #39. Время фразы и
+CPU — из итоговой строки `replay`, пик памяти — `/usr/bin/time -v`.
+
+| | Строк | `вопрос` | Фраза p50 / p90 / max | CPU за прогон 64.4 с | Память |
+|---|---|---|---|---|---|
+| CTC | 66 | 14 | 0.24 / 0.93 / 1.20 с | 57.5 с | 508 МБ |
+| RNNT | 66 | 16 | 0.32 / 1.14 / 1.44 с | 84.8 с | 502 МБ |
+
+- Слов 1604 у CTC и 1598 у RNNT, совпадение по словам (`difflib`) — 0.939.
+- Вывод RNNT совпадает с прототипом на beam (`prototype/rnnt.py`, `out/call1.rnnt-beam.txt`) на 0.993, с жадным
+  поиском — на 0.982: в приложении работает beam.
+
+**Записи с машины владельца, нативная Windows.** 8 записей `meeting start` (стенды, чтение, созвон команды),
+1354.8 с звука; текст сравнивался только счётчиками. CTC — установленное приложение `v0.2.5` (код распознавания тот же, что в `v0.2.6`),
+RNNT — ветка #39, `win-x64` self-contained.
+
+| | Строк | Слов | `обращение` («агент» в тексте) | `вопрос` | `накопилось` |
+|---|---|---|---|---|---|
+| CTC | 110 | 1658 | 6 (6) | 15 | 4 |
+| RNNT | 108 | 1623 | 6 (6) | 21 | 3 |
+
+- Строки, которые есть только у одной сборки, — по одному слову: две у CTC, одна у RNNT.
+- «Клод» в тексте: 0 у CTC, 1 у RNNT — из трёх произнесений на проверочной записи («Слово обращения» ниже).
+  Обращение остаётся одним словом «агент».
+- `вопрос` расходится на 10 фраз: 8 из них RNNT закончил «?», а CTC — нет; 2 — наоборот. Какой из вариантов
+  верен, по счётчикам не видно. Лишний `вопрос` — лишнее пробуждение сессии; доля молчаний — #3.
+- Самая длинная запись (542.7 с, созвон в наушниках): фраза p50 / p90 / max — 0.09 / 0.90 / 1.30 с у CTC против
+  0.12 / 1.16 / 1.61 с у RNNT; CPU процесса — 33.2 против 52.5 с; пик памяти — 408 против 419 МБ.
+
+Итог: RNNT на 20–35 % дольше на фразу и в полтора раза дороже по CPU, но это доли секунды: фраза — до 1.6 с,
+CPU на записи созвона — около 10 % одного ядра. Слово обращения пишется так же.
+
 ## Скилл `/meeting` на живом прогоне
 
 Условия:
@@ -415,21 +452,21 @@ Whisper (p50 72 знака), а не фраза.
 
 ## Модели
 
-Источник — релиз `asr-models` репозитория k2-fsa/sherpa-onnx. Рабочие модели — GigaAM v3 CTC punct (163 МБ)
-и `silero_vad.onnx` — кладёт в `models/` `scripts/download-models.sh` со сверкой SHA-256; приложению их ставит
-`scripts/install.ps1`. Только для повтора сравнения — T-one (128 МБ):
+Источник — релиз `asr-models` репозитория k2-fsa/sherpa-onnx. Рабочие модели — GigaAM v3 RNNT с пунктуацией
+(162 МБ в архиве) и `silero_vad.onnx` — кладёт в `models/` `scripts/download-models.sh` со сверкой SHA-256;
+приложению их ставит `scripts/install.ps1`. Только для повтора сравнений — GigaAM v3 CTC с пунктуацией (живое
+распознавание до #39; `prototype/bench.py`, `ctc.py`, `openstt-run.sh`) и T-one (128 МБ):
 
 ```
+curl -sSLO https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-ctc-punct-giga-am-v3-russian-2025-12-16.tar.bz2
 curl -sSLO https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-t-one-russian-2025-09-08.tar.bz2
 ```
 
-Для замера словаря и открытого набора — GigaAM v3 RNNT с пунктуацией (162 МБ в архиве); замеру словаря нужен ещё
-его токенизатор: `tokenizer.model`
+Замеру словаря (hotwords GigaAM RNNT) нужен ещё токенизатор модели: `tokenizer.model`
 из `ai-sage/GigaAM-v3` на Hugging Face, ветка `e2e_rnnt` (коммит `7655ad7`, SHA-256 `828c12c9…`), кладётся в каталог
 модели, рядом — `bpe.vocab` от `prototype/spm2vocab.py`:
 
 ```
-curl -sSLO https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16.tar.bz2
 curl -sSL -o tokenizer.model https://huggingface.co/ai-sage/GigaAM-v3/resolve/7655ad717f8122257385bb4b2f373db3697e8680/tokenizer.model
 ```
 
