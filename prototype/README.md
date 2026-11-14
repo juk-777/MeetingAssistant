@@ -30,6 +30,10 @@ uv venv -q -p 3.12 .venv && uv pip install -q -p .venv sherpa-onnx==2.0.1 numpy 
   в VAD отдельно, `seg/openstt-<часть>-clips<пауза>/`. Архив части качает в `samples/openstt/` со сверкой SHA-256.
 - `openstt-run.sh <часть>` — замер на открытом наборе одной командой: выборка, CTC, RNNT beam, контроль, turbo,
   WER/CER (`docs/measurements.md`, «Открытый набор»); готовое не пересчитывает. Turbo — около получаса на часть.
+- `events_stats.py <каталог встречи>[,<звук>]...` — пробуждения сессии по каталогам встреч (после `meeting replay`):
+  в час, по поводам, интервалы; только счётчики, без текста.
+- `referee.py <имя>...` — CTC против RNNT beam с turbo третьим мнением на записи без эталона: слова и совпадение
+  с turbo, отдельно по фразам длиннее 20 с (`docs/measurements.md`, «Живое распознавание: RNNT против CTC»).
 - `wer.py <seg/имя> <вывод>...` — WER и CER вывода против эталона выборки; `wer.py --pair <seg/имя> <вывод> <вывод>` —
   сколько единиц второй вывод распознал лучше и хуже первого; `wer.py --test` — проверка счёта.
 - `spm2vocab.py <tokenizer.model> > <bpe.vocab>` — словарь токенизатора GigaAM для hotwords (`docs/measurements.md`,
