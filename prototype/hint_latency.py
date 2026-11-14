@@ -1,6 +1,7 @@
 """Задержка «событие → подсказка» по частям для прогона скилла на стенде meeting-feed.sh.
 
-Запуск: python hint_latency.py <stream.tsv> <hints.md>. stream.tsv — вывод `claude -p --output-format stream-json
+Запуск: python hint_latency.py <stream.tsv> <hints.md> [events.log]; с events.log в конце — подсказки и молчания
+по поводам события (строка events.log с тем же временем). stream.tsv — вывод `claude -p --output-format stream-json
 --verbose`, каждая строка с временем прихода через табуляцию. Части: доставка — от события до начала хода сессии
 (`system/init` после события); ход — от начала хода до вызова `meeting-hint`; из него инструменты — сумма от вызова
 до результата, кроме `meeting-hint`. Вид: ссылка, `общее` или молчание — по строке hints.md.
@@ -29,6 +30,14 @@ for line in open(sys.argv[1], encoding="utf-8"):
                 start, is_hint = pending.pop(part["tool_use_id"])
                 tools.append((start, at, is_hint))
 
+causes = {}
+if len(sys.argv) > 3:
+    for line in open(sys.argv[3], encoding="utf-8"):
+        epoch, _, reasons = line.rstrip("\n").split("\t")
+        causes[round(float(epoch), 3)] = reasons
+by_cause = {}
+parts = {"доставка": [], "ход": [], "всего": [], "всего, только подсказки": []}
+
 print("событие\tдоставка, с\tход до meeting-hint, с\tиз них инструменты, с\tвсего, с\tвид")
 for line in open(sys.argv[2], encoding="utf-8"):
     event, written, number, text = line.rstrip("\n").split("\t", 3)
@@ -42,3 +51,19 @@ for line in open(sys.argv[2], encoding="utf-8"):
     tail = text.split(" / ")[-1].strip(" `«»()*.")
     kind = "молчание" if text == "-" else ("общее" if tail.endswith("общее") else "ссылка")
     print(f"{number}\t{turn - event:.1f}\t{written - turn:.1f}\t{used:.1f}\t{written - event:.1f}\t{kind}")
+    parts["доставка"].append(turn - event)
+    parts["ход"].append(written - turn)
+    parts["всего"].append(written - event)
+    if kind != "молчание":
+        parts["всего, только подсказки"].append(written - event)
+    if causes:
+        counts = by_cause.setdefault(causes.get(round(event, 3), "?"), {})
+        counts[kind] = counts.get(kind, 0) + 1
+
+for name, values in parts.items():
+    if values:
+        values.sort()
+        print(f"{name}: p50 {values[len(values) // 2]:.1f} с, p90 {values[len(values) * 9 // 10]:.1f} с, "
+              f"max {values[-1]:.1f} с ({len(values)})")
+for cause, counts in sorted(by_cause.items()):
+    print(f"{cause}: " + ", ".join(f"{kind} {n}" for kind, n in sorted(counts.items())))
