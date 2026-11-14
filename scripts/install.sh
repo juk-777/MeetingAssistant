@@ -46,7 +46,7 @@ fail() { echo "$1" >&2; exit 1; }
 [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] ||
     fail "Скрипт ставит meeting на Linux x86-64. Windows — install.ps1."
 for tool in curl tar sha256sum; do
-    command -v "$tool" > /dev/null || fail "Нет $tool: поставьте его (Ubuntu: sudo apt install $tool)."
+    command -v "$tool" > /dev/null || fail "Нет $tool: поставьте его (Ubuntu: пакеты curl, tar, coreutils)."
 done
 
 base="${XDG_DATA_HOME:-$HOME/.local/share}/meeting-assistant"
@@ -66,13 +66,15 @@ recognizer=sherpa-onnx-nemo-ctc-punct-giga-am-v3-russian-2025-12-16
 model_files=("$vad" "$recognizer/model.int8.onnx" "$recognizer/tokens.txt")
 
 # Модели — из релиза sherpa-onnx; суммы те же, что в install.ps1 и download-models.sh (тест скилла сверяет).
-model_release=https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models
+# Источник моделей можно подменить зеркалом или каталогом (MEETING_MODEL_RELEASE, MEETING_WHISPER_SOURCE): суммы
+# остаются те же.
+model_release=${MEETING_MODEL_RELEASE:-https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models}
 vad_sha256=9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6
 recognizer_sha256=20e41e160efa6f2460a7ef6554cdbbb9e8fffb2b92e6bc708e9406bd8b9256ea
 
 # Whisper turbo — для уточнения встречи (meeting refine). Адрес закреплён на ревизии Hugging Face.
 whisper_file=ggml-large-v3-turbo-q5_0.bin
-whisper_source=https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1
+whisper_source=${MEETING_WHISPER_SOURCE:-https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1}
 whisper_sha256=394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2
 
 has_models() {
@@ -97,10 +99,42 @@ release_file() {
     fi
 }
 
+# Значение в одинарных кавычках: его читают и bash, и sh (dash), в любой локали.
+quote() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
+
 cleanup() { rm -rf "$staging" "$downloads"; }
 trap cleanup EXIT
 cleanup
 mkdir -p "$base" "$downloads"
+
+# 0. Всё, на чём могут отказать ссылка, ~/.profile и корень встреч, — до замены app.
+if [ -L "$bin/meeting" ]; then
+    [ "$(readlink "$bin/meeting")" = "$app/meeting" ] ||
+        fail "$bin/meeting ведёт в $(readlink "$bin/meeting"), а не в установку: уберите ссылку и повторите."
+elif [ -e "$bin/meeting" ]; then
+    fail "$bin/meeting — не ссылка на установку: уберите его и повторите."
+fi
+
+begin='# >>> meeting-assistant >>>'
+end='# <<< meeting-assistant <<<'
+if [ -f "$profile" ] && [ "$(grep -cxF "$begin" "$profile" || true)" != "$(grep -cxF "$end" "$profile" || true)" ]; then
+    fail "В ~/.profile блок meeting-assistant без начала или конца: поправьте руками (строки «$begin» и «$end») и повторите."
+fi
+
+previous_root=
+if [ -f "$profile" ]; then
+    # Строка export из блока, выполненная в подоболочке, возвращает значение как было.
+    previous_root=$(sed -n "/^$begin\$/,/^$end\$/{/^export Storage__MeetingsRoot=/p}" "$profile" |
+        (unset Storage__MeetingsRoot; . /dev/stdin; printf '%s' "${Storage__MeetingsRoot:-}"))
+fi
+if [ -n "$meetings_root" ]; then
+    root=$(realpath -m -- "$meetings_root")
+elif [ -n "$previous_root" ]; then
+    root=$previous_root
+else
+    root=${Storage__MeetingsRoot:-$HOME/Meetings}
+fi
+mkdir -p "$root" 2> /dev/null || fail "Не создать корень встреч $root: задайте другой — --meetings-root <каталог>."
 
 # 1. Новый app — в app.new. Запущенный meeting замене не мешает: Linux держит открытые файлы прежней версии до
 # конца процесса.
@@ -191,35 +225,15 @@ elif [ -n "$download" ]; then
 fi
 [ -z "$whisper_needed" ] || mv "$whisper_staged" "$models/"
 
-# 5. Ссылка meeting в ~/.local/bin. Чужой файл с тем же именем не трогается.
+# 5. Ссылка meeting в ~/.local/bin (чужой файл и чужую ссылку шаг 0 уже отсёк).
 mkdir -p "$bin"
-if [ -e "$bin/meeting" ] && [ ! -L "$bin/meeting" ]; then
-    fail "$bin/meeting — не ссылка на установку: уберите его и повторите. Приложение уже стоит в $app."
-fi
 ln -sfn "$app/meeting" "$bin/meeting"
 
 # 6. Переменные — в ~/.profile своим блоком: его читают вход в систему и login-оболочки. Повтор заменяет блок.
-begin='# >>> meeting-assistant >>>'
-end='# <<< meeting-assistant <<<'
-previous_root=
-if [ -f "$profile" ]; then
-    # Значение записано через printf %q: строка export из блока, выполненная в подоболочке, возвращает его как было.
-    previous_root=$(sed -n "/^$begin\$/,/^$end\$/{/^export Storage__MeetingsRoot=/p}" "$profile" |
-        (unset Storage__MeetingsRoot; . /dev/stdin; printf '%s' "${Storage__MeetingsRoot:-}"))
-fi
-if [ -n "$meetings_root" ]; then
-    root=$(realpath -m -- "$meetings_root")
-elif [ -n "$previous_root" ]; then
-    root=$previous_root
-else
-    root=${Storage__MeetingsRoot:-$HOME/Meetings}
-fi
-mkdir -p "$root"
-
 block=$(
     echo "$begin"
-    printf 'export Storage__MeetingsRoot=%q\n' "$root"
-    printf 'export Speech__ModelsDirectory=%q\n' "$models"
+    echo "export Storage__MeetingsRoot=$(quote "$root")"
+    echo "export Speech__ModelsDirectory=$(quote "$models")"
     # shellcheck disable=SC2016 # раскрывается при входе, а не сейчас
     printf '%s\n' 'case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac'
     echo "$end"
@@ -239,4 +253,10 @@ size=$(du -sm "$app" | cut -f1)
 echo "Готово: meeting $installed, $app ($size МБ)"
 echo "Корень встреч: $root"
 echo "Переменные — в ~/.profile: они действуют со следующего входа в систему; сейчас — source ~/.profile."
+# Login-bash при ~/.bash_profile или ~/.bash_login читает их, а не ~/.profile.
+for own in "$HOME/.bash_profile" "$HOME/.bash_login"; do
+    if [ -f "$own" ] && ! grep -q '\.profile' "$own"; then
+        echo "Есть $own: login-bash не читает ~/.profile — добавьте в $own строку «. ~/.profile»."
+    fi
+done
 echo 'Новое окно терминала: meeting start "<имя>"; из сессии Claude Code: /meeting start <имя>.'

@@ -63,6 +63,18 @@ public sealed class PulseDeviceStreamTests
     }
 
     [Fact]
+    public async Task Read_WhenLibraryCallThrows_ThrowsAudioSourceExceptionKeepingCauseAndFreesStream()
+    {
+        var cause = new EntryPointNotFoundException("pa_simple_read");
+        var pulse = new FakePulse(_time) { ReadThrows = cause };
+
+        AudioSourceException failure = await Should.ThrowAsync<AudioSourceException>(() => Take(Open(pulse), 1));
+
+        failure.InnerException.ShouldBeSameAs(cause);
+        pulse.Freed.Count.ShouldBe(1);
+    }
+
+    [Fact]
     public async Task Read_WhenStopped_FreesStreamOnceAfterReadInProgressReturns()
     {
         // Третье чтение идёт, когда чтение останавливают: соединение освобождается только после его конца.

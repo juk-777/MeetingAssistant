@@ -31,6 +31,11 @@ internal sealed class FakePulse(FakeTimeProvider time) : IPulseSimple
     public int? FailingRead { get; init; }
 
     /// <summary>
+    /// Что бросает чтение вместо ответа: так ведёт себя вызов библиотеки, которой не хватает функции.
+    /// </summary>
+    public Exception? ReadThrows { get; init; }
+
+    /// <summary>
     /// С какого чтения (с 1) оно держится, пока соединение не освободят или не выйдет предел: так видно, освобождено ли
     /// соединение посреди чтения.
     /// </summary>
@@ -72,6 +77,11 @@ internal sealed class FakePulse(FakeTimeProvider time) : IPulseSimple
     public bool TryRead(nint stream, Span<byte> data, out string error)
     {
         int read = Interlocked.Increment(ref _reads);
+
+        if (ReadThrows is not null)
+        {
+            throw ReadThrows;
+        }
 
         if (read >= HoldingRead && _anyFreed.Task.Wait(HoldLimit))
         {

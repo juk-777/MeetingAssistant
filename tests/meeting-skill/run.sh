@@ -1175,6 +1175,71 @@ linuxsetup_WhenForeignFileHoldsLinkName_RefusesAndKeepsIt() {
     [ "$(cat "$home/.local/bin/meeting")" = 'чужой' ] || { echo "чужой файл тронут"; return 1; }
 }
 
+linuxsetup_WhenForeignLinkHoldsLinkName_RefusesAndKeepsIt() {
+    linuxsetup_home
+    linuxsetup_release 1.0.0
+    mkdir -p "$home/.local/bin"
+    ln -s "$work/своя-сборка" "$home/.local/bin/meeting"
+    if linuxsetup_run; then
+        echo "отказа нет"
+        return 1
+    fi
+    [ "$(readlink "$home/.local/bin/meeting")" = "$work/своя-сборка" ] || { echo "чужая ссылка тронута"; return 1; }
+    [ ! -e "$home/.local/share/meeting-assistant/app" ] || { echo "app поставлен до отказа"; return 1; }
+}
+
+linuxsetup_WhenProfileBlockHasNoEnd_RefusesAndKeepsProfile() {
+    linuxsetup_home
+    linuxsetup_release 1.0.0
+    printf 'до\n# >>> meeting-assistant >>>\nexport X=1\nстрока пользователя\n' > "$home/.profile"
+    cp "$home/.profile" "$work/profile.before"
+    if linuxsetup_run; then
+        echo "отказа нет"
+        return 1
+    fi
+    cmp -s "$home/.profile" "$work/profile.before" || { echo "~/.profile тронут"; return 1; }
+}
+
+# Корень с кириллицей и кавычкой, установка в локали C: значение читает и sh (dash), не только bash.
+linuxsetup_WhenRootNotAsciiInCLocale_ShReadsIt() {
+    linuxsetup_home
+    linuxsetup_release 1.0.0
+    local root="$work/встречи 'и кавычка'" got
+    LC_ALL=C linuxsetup_run --meetings-root "$root" || { cat "$work/setup.log"; return 1; }
+    got=$(env -i HOME="$home" sh -c '. "$HOME/.profile"; printf "%s" "$Storage__MeetingsRoot"')
+    [ "$got" = "$root" ] || { echo "sh прочёл: '$got'"; return 1; }
+}
+
+# Модели не стоят и качаются из каталога-подмены: файл с неверной суммой не ставится, app не тронут.
+linuxsetup_WhenModelChecksumWrong_RefusesBeforeApp() {
+    home=$(mktemp -d "$work/home.XXXX")
+    linuxsetup_release 1.0.0
+    mkdir -p "$work/model-release"
+    printf 'не модель\n' > "$work/model-release/silero_vad.onnx"
+    if MEETING_MODEL_RELEASE="$work/model-release" linuxsetup_run; then
+        echo "отказа нет"
+        return 1
+    fi
+    grep -q 'Контрольная сумма silero_vad.onnx' "$work/setup.log" || { cat "$work/setup.log"; return 1; }
+    [ ! -e "$home/.local/share/meeting-assistant/app" ] || { echo "app поставлен"; return 1; }
+}
+
+linuxsetup_WhenWhisperChecksumWrong_RefusesAndDoesNotPlaceIt() {
+    linuxsetup_home
+    linuxsetup_release 1.0.0
+    local whisper
+    whisper=$(grep -oP '^whisper_file=\K\S+' "$repo/scripts/install.sh")
+    rm "$home/.local/share/meeting-assistant/models/$whisper"
+    mkdir -p "$work/whisper-source"
+    printf 'не модель\n' > "$work/whisper-source/$whisper"
+    if MEETING_WHISPER_SOURCE="$work/whisper-source" linuxsetup_run; then
+        echo "отказа нет"
+        return 1
+    fi
+    grep -q "Контрольная сумма $whisper" "$work/setup.log" || { cat "$work/setup.log"; return 1; }
+    [ ! -e "$home/.local/share/meeting-assistant/models/$whisper" ] || { echo "Whisper поставлен"; return 1; }
+}
+
 release_WhenPluginVersionMatchesTag_PrintsVersion() {
     local version got
     for version in 1.2.3 1.2.3-rc.1; do
