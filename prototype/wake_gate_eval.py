@@ -70,8 +70,15 @@ def words(text):
 
 
 def keeps_question(text):
+    # Знаки в конце предложения склеиваются («?.», «?!»): вопрос — если среди них есть «?».
     sentences = re.findall(r"[^.!?…]*[.!?…]+|[^.!?…]+$", text)
-    return any(s.rstrip().endswith("?") and len(words(s)) >= MIN_QUESTION_WORDS for s in sentences)
+    return any(re.search(r"\?[.!?…]*$", s.rstrip()) and len(words(s)) >= MIN_QUESTION_WORDS for s in sentences)
+
+
+def rule_keeps_event(reasons, line):
+    """Правило снимает только повод `вопрос`: событие с другим поводом остаётся."""
+    causes = reasons.split(",")
+    return "вопрос" not in causes or len(causes) > 1 or keeps_question(line)
 
 
 def load(run):
@@ -111,17 +118,28 @@ def cases(run):
         previous = number
 
 
-def ask(instruction, prompt):
+def parse(answer, scored):
+    """Решение ворот и признак ответа по форме. Не по форме — как сбой: событие проходит (оценка 10, «да»)."""
+    answer = answer.strip().lower()
+    if scored:
+        score = re.fullmatch(r"(\d+)\.?", answer)
+        return (int(score.group(1)), True) if score else (10, False)
+    if answer.startswith("нет"):
+        return False, True
+    return True, answer.startswith("да")
+
+
+def ask(variant, prompt):
     started = time.perf_counter()
     with tempfile.TemporaryDirectory() as empty:
-        result = subprocess.run(GATE + [instruction + "\n\n" + prompt], capture_output=True, text=True, timeout=60,
-                                cwd=empty, stdin=subprocess.DEVNULL)
-    answer = result.stdout.strip().lower()
-    # Ответ не по форме — как сбой ворот: событие проходит (оценка 10, «да»).
-    score = re.match(r"\d+", answer)
-    value = int(score.group()) if score else 10
-    return (value if instruction == PROMPTS.get("v3") else answer.startswith("да") or not answer.startswith("нет"),
-            time.perf_counter() - started)
+        try:
+            result = subprocess.run(GATE + [PROMPTS[variant] + "\n\n" + prompt], capture_output=True, text=True,
+                                    timeout=60, cwd=empty, stdin=subprocess.DEVNULL)
+            answer = result.stdout if result.returncode == 0 else ""
+        except subprocess.TimeoutExpired:
+            answer = ""
+    decision, well_formed = parse(answer, variant in SCORED)
+    return decision, well_formed, time.perf_counter() - started
 
 
 def report(name, rows, times=None):
@@ -145,6 +163,13 @@ def test():
         (keeps_question("Да? Ну хорошо, тогда идём дальше по плану."), False, "короткий «да?» в длинной фразе"),
         (keeps_question("Ладно. А где это лежит?"), True, "вопрос вторым предложением"),
         (keeps_question("Почему?"), False, "одно слово"),
+        (keeps_question("Как это работает?. Ну ладно"), True, "«?.» на конце вопроса"),
+        (keeps_question("Где лежит конфиг? Сейчас посмотрю сам, у меня открыто"), True,
+         "вопрос первым предложением, утверждение после"),
+        (keeps_question("Где лежит конфиг?"), True, "ровно три слова"),
+        (rule_keeps_event("накопилось", "Да? Ну ладно, дальше по плану."), True, "событие без повода «вопрос»"),
+        (rule_keeps_event("вопрос", "Да? Ну ладно, дальше по плану."), False, "событие только с «вопросом»"),
+        (rule_keeps_event("обращение,вопрос", "Да? Агент, дальше."), True, "«вопрос» вместе с другим поводом"),
         (bool(QUESTION_START.match("а если упадёт база")), True, "вопросительное начало"),
     ]
     rows = [("подсказка", True), ("подсказка", False), ("молчание", False), ("молчание", True), ("молчание", False)]
@@ -152,6 +177,12 @@ def test():
     for got, expected, name in checks:
         failed += got != expected
         print(f"{'ок ' if got == expected else 'НЕТ'} {name}")
+    answers = [(parse("Да.", False), (True, True)), (parse("нет", False), (False, True)),
+               (parse("не знаю", False), (True, False)), (parse("7", True), (7, True)),
+               (parse("оценка 3", True), (10, False))]
+    for got, expected in answers:
+        failed += got != expected
+        print(f"{'ок ' if got == expected else 'НЕТ'} разбор ответа ворот: {got}")
     counts = report("счёт", rows)
     failed += counts != (1, 2, 2, 3)
     print(f"{'ок ' if counts == (1, 2, 2, 3) else 'НЕТ'} счёт пропущенных ответов и отсечённых молчаний")
@@ -166,20 +197,21 @@ if __name__ == "__main__":
     variant, runs = sys.argv[1], sys.argv[2:]
     all_cases = [case for run in runs for case in cases(run)]
     if variant == "rule":
-        rows = [(label, "вопрос" not in reasons.split(",") or keeps_question(line))
-                for reasons, label, _, line in all_cases]
+        rows = [(label, rule_keeps_event(reasons, line)) for reasons, label, _, line in all_cases]
         report("правило вопроса по предложению (только события «вопрос» могут отпасть)", rows)
         lines = [text_of(line) for run in runs for line in load(run)[0].values()]
         no_mark = sum(1 for t in lines if "?" not in t and QUESTION_START.match(t.strip()))
         print(f"фраз без «?» с вопросительным словом в начале: {no_mark} из {len(lines)}")
         sys.exit(0)
     with concurrent.futures.ThreadPoolExecutor(4) as pool:
-        answers = list(pool.map(lambda case: ask(PROMPTS[variant], case[2]), all_cases))
-    times = [seconds for _, seconds in answers]
+        answers = list(pool.map(lambda case: ask(variant, case[2]), all_cases))
+    times = [seconds for _, _, seconds in answers]
+    print(f"ответов не по форме, сбоев и таймаутов (засчитаны как «будить»): "
+          f"{sum(1 for _, well_formed, _ in answers if not well_formed)} из {len(answers)}")
     thresholds = range(1, 11) if variant in SCORED else [None]
     for threshold in thresholds:
         rows = [(case[1], woke if threshold is None else woke >= threshold)
-                for case, (woke, _) in zip(all_cases, answers)]
+                for case, (woke, _, _) in zip(all_cases, answers)]
         name = f"ворота {variant}" + ("" if threshold is None else f", будить от {threshold}")
         report(name, rows, times if threshold in (None, 1) else None)
         if threshold is None:
