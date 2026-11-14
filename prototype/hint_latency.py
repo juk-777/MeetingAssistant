@@ -1,9 +1,9 @@
-"""Задержка «событие → подсказка» по частям для прогона скилла на стенде meeting-feed.sh.
+"""Задержка «событие → подсказка» по частям для прогона скилла на стенде meeting-run.sh или meeting-replay-run.sh.
 
 Запуск: python hint_latency.py <stream.tsv> <hints.md> [events.log]; с events.log в конце — подсказки и молчания
 по поводам события (строка events.log с тем же временем). stream.tsv — вывод `claude -p --output-format stream-json
 --verbose`, каждая строка с временем прихода через табуляцию. Части: доставка — от события до начала хода сессии
-(`system/init` после события); ход — от начала хода до вызова `meeting-hint`; из него инструменты — сумма от вызова
+(последний `system/init` до записи подсказки; событие, взятое посреди идущего хода, — без доставки); ход — от начала хода до вызова `meeting-hint`; из него инструменты — сумма от вызова
 до результата, кроме `meeting-hint`. Вид: ссылка, `общее` или молчание — по строке hints.md.
 """
 import json
@@ -42,9 +42,12 @@ print("событие\tдоставка, с\tход до meeting-hint, с\tиз 
 for line in open(sys.argv[2], encoding="utf-8"):
     event, written, number, text = line.rstrip("\n").split("\t", 3)
     event, written = float(event), float(written)
-    turn = min((t for t in turns if t >= event), default=None)
+    # Ход, в котором записана подсказка, — последний начатый до записи. Событие, пришедшее посреди идущего хода,
+    # сессия берёт без нового system/init: тогда доставки нет, ход считается от события.
+    turn = max((t for t in turns if t <= written), default=None)
     if turn is None:
         continue
+    turn = max(turn, event)
     used = sum(end - start for start, end, is_hint in tools if turn <= start < written and not is_hint)
     # Вид — по последней строке подсказки: «общее» (в любых кавычках и скобках) или источник; наличие чтения
     # перед ссылкой видно по колонке инструментов этого и прошлых ходов.
