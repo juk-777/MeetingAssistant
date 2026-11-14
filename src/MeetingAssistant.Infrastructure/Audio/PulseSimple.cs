@@ -19,6 +19,7 @@ internal sealed partial class PulseSimple : IPulseSimple
     private const int StreamRecord = 2;
     private const int SampleS16Le = 3;
     private const ulong LatencyUnknown = ulong.MaxValue;
+    private const uint ServerDefault = uint.MaxValue;
 
     public bool Load() =>
         OperatingSystem.IsLinux() && NativeLibrary.TryLoad(SimpleLibrary, out _) && NativeLibrary.TryLoad(CoreLibrary, out _);
@@ -26,7 +27,10 @@ internal sealed partial class PulseSimple : IPulseSimple
     public bool TryOpen(string device, string streamName, out nint stream, out string error)
     {
         var spec = new SampleSpec(SampleS16Le, (uint)PulseDeviceStream.DeviceFormat.SampleRate, (byte)PulseDeviceStream.DeviceFormat.Channels);
-        stream = SimpleNew(null, "meeting", StreamRecord, device, streamName, in spec, 0, 0, out int code);
+        // Сервер отдаёт запись кусками по fragsize, по умолчанию — около 2 с: пакеты приходили бы пачками позже
+        // запаса на доставку, и тишина по часам срезала бы их звук. Кусок — длиной пакета.
+        var buffer = new BufferAttributes(ServerDefault, ServerDefault, ServerDefault, ServerDefault, (uint)PulseDeviceStream.PacketBytes);
+        stream = SimpleNew(null, "meeting", StreamRecord, device, streamName, in spec, 0, in buffer, out int code);
         error = stream == 0 ? Describe(code) : string.Empty;
         return stream != 0;
     }
@@ -57,7 +61,7 @@ internal sealed partial class PulseSimple : IPulseSimple
         string streamName,
         in SampleSpec spec,
         nint channelMap,
-        nint bufferAttributes,
+        in BufferAttributes bufferAttributes,
         out int error);
 
     [LibraryImport(SimpleLibrary, EntryPoint = "pa_simple_read")]
@@ -82,5 +86,18 @@ internal sealed partial class PulseSimple : IPulseSimple
         public readonly int Format = format;
         public readonly uint Rate = rate;
         public readonly byte Channels = channels;
+    }
+
+    /// <summary>
+    /// <c>pa_buffer_attr</c>; <see cref="ServerDefault"/> — значение на выбор сервера.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct BufferAttributes(uint maxLength, uint targetLength, uint prebuffer, uint minimumRequest, uint fragmentSize)
+    {
+        public readonly uint MaxLength = maxLength;
+        public readonly uint TargetLength = targetLength;
+        public readonly uint Prebuffer = prebuffer;
+        public readonly uint MinimumRequest = minimumRequest;
+        public readonly uint FragmentSize = fragmentSize;
     }
 }

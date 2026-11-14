@@ -26,7 +26,10 @@ internal sealed class PulseDeviceStream : IDeviceStream, IDisposable
     /// </summary>
     public static readonly TimeSpan PacketDuration = TimeSpan.FromMilliseconds(100);
 
-    private static readonly int PacketBytes = (int)(DeviceFormat.AverageBytesPerSecond * PacketDuration.TotalSeconds);
+    /// <summary>
+    /// Длина пакета в байтах.
+    /// </summary>
+    public static readonly int PacketBytes = (int)(DeviceFormat.AverageBytesPerSecond * PacketDuration.TotalSeconds);
 
     private readonly IPulseSimple _pulse;
     private readonly TimeProvider _time;
