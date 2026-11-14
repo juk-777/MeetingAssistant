@@ -1063,6 +1063,25 @@ models_WhenWhisperFileNamedInThreePlaces_NamesMatch() {
         { echo "SpeechModels '$code', install.ps1 '$ps', meeting-refine '$refine'"; return 1; }
 }
 
+# Приложение проверяет на старте те файлы модели, которые знает SpeechModels, а ставят их install.ps1 и
+# download-models.sh (CI берёт модели вторым): расхождение с install.ps1 тесты C# не видят.
+models_WhenRecognizerNamedInThreePlaces_NamesMatch() {
+    local -x LC_ALL=C.UTF-8
+    local options="$repo/src/MeetingAssistant.Infrastructure/Speech/SpeechOptions.cs"
+    local code ps sh code_files ps_files sh_files
+    code=$(grep -oP 'RecognizerDirectory = "\K[^"]+' "$options")
+    ps=$(grep -oP "^\\\$recognizerDirectory = '\K[^']+" "$repo/scripts/install.ps1")
+    sh=$(grep -oP '^recognizer=\K\S+' "$repo/scripts/download-models.sh")
+    code_files=$(grep -oP 'RecognizerFile\(modelsDirectory, "\K[^"]+' "$options" | sort | paste -sd' ')
+    ps_files=$(grep -A1 '^\$modelFiles = ' "$repo/scripts/install.ps1" | grep -oP "'\K[^',]+\.(onnx|txt)(?=')" |
+        sort | paste -sd' ')
+    sh_files=$(grep -oP '^recognizer_files="\K[^"]+' "$repo/scripts/download-models.sh" | tr ' ' '\n' | sort | paste -sd' ')
+    [ -n "$code" ] && [ "$code" = "$ps" ] && [ "$code" = "$sh" ] ||
+        { echo "каталог: SpeechModels '$code', install.ps1 '$ps', download-models.sh '$sh'"; return 1; }
+    [ -n "$code_files" ] && [ "$code_files" = "$ps_files" ] && [ "$code_files" = "$sh_files" ] ||
+        { echo "файлы: SpeechModels '$code_files', install.ps1 '$ps_files', download-models.sh '$sh_files'"; return 1; }
+}
+
 release_WhenPluginVersionMatchesTag_PrintsVersion() {
     local version got
     for version in 1.2.3 1.2.3-rc.1; do
