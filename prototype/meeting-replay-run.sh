@@ -17,6 +17,10 @@ effort=$5
 cwd=$6
 repo=$(cd "$(dirname "$0")/.." && pwd)
 [ ! -e "$run" ] || { echo "Каталог прогона уже есть: $run — нужен новый." >&2; exit 1; }
+[ -d "$cwd" ] || { echo "Нет рабочего каталога сессии: $cwd" >&2; exit 1; }
+# Срок сессии — длина записи и 10 минут сверху: упавший replay без «конца записи» не держит её часами.
+seconds=$(python3 -c 'import sys, wave; w = wave.open(sys.argv[1]); print(int(w.getnframes() / w.getframerate()))' "$audio") ||
+    exit 1
 mkdir -p "$run/meetings"
 run=$(cd "$run" && pwd)
 
@@ -29,7 +33,7 @@ done
 
 clean_path=$(printf '%s' "$PATH" | tr ':' '\n' | grep -v '^/mnt/' | paste -sd:)
 cd "$cwd" || exit 1
-PATH=$clean_path timeout -k 30 14400 claude -p "/meeting '$dir'" --model "$model" --effort "$effort" \
+PATH=$clean_path timeout -k 30 $((seconds + 600)) claude -p "/meeting '$dir'" --model "$model" --effort "$effort" \
     --plugin-dir "$repo/plugins/meeting" --settings '{"enabledPlugins":{"meeting@meeting-assistant":false}}' \
     --allowedTools "Bash Read Grep Glob Monitor" --output-format stream-json --verbose < /dev/null 2>&1 \
     | while IFS= read -r line; do printf '%s\t%s\n' "${EPOCHREALTIME/,/.}" "$line"; done > "$run/stream.tsv"
