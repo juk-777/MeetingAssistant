@@ -38,6 +38,7 @@ public static class DependencyInjection
         services.AddSingleton<ITranscriptWriter, TranscriptFile>();
         services.AddSingleton<IWakeEventWriter, EventsFile>();
 
+        services.AddSingleton<IPulseSimple, PulseSimple>();
         services.AddSingleton<ILiveCapture, LiveCapture>();
 
         services.AddSingleton<IRecordedMeetings, RecordedMeetingFolder>();

@@ -14,12 +14,22 @@ public static class AudioErrors
     public const string UnsupportedDeviceFormatCode = "Audio.UnsupportedDeviceFormat";
     public const string CaptureUnsupportedCode = "Audio.CaptureUnsupported";
     public const string NoDeviceCode = "Audio.NoDevice";
+    public const string NoSoundLibraryCode = "Audio.NoSoundLibrary";
 
     public static readonly Error CaptureUnsupported =
-        new(CaptureUnsupportedCode, "Захват звука встречи работает только в Windows: запустите meeting start там.");
+        new(CaptureUnsupportedCode, "Захват звука встречи есть только в Windows и Linux: запустите meeting start там.");
+
+    public static readonly Error NoSoundLibrary = new(
+        NoSoundLibraryCode,
+        "Нет libpulse-simple.so.0 — через неё meeting пишет звук с сервера PulseAudio или PipeWire. " +
+        "Ubuntu и Debian: sudo apt install libpulse0.");
 
     public static Error NoDevice(string kind) =>
         new(NoDeviceCode, $"В Windows нет устройства {kind} по умолчанию.");
+
+    public static Error SoundServerRefused(string kind, string reason) => new(
+        NoDeviceCode,
+        $"Сервер звука не открыл {kind} по умолчанию: {reason}. Нужен PulseAudio или PipeWire с pipewire-pulse.");
 
     public static Error FileNotFound(string path) => new(FileNotFoundCode, $"Нет файла записи: {path}.");
 
