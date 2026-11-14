@@ -77,5 +77,10 @@ internal sealed partial class PulseSimple : IPulseSimple
     /// <c>pa_sample_spec</c>.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    private readonly record struct SampleSpec(int Format, uint Rate, byte Channels);
+    private readonly struct SampleSpec(int format, uint rate, byte channels)
+    {
+        public readonly int Format = format;
+        public readonly uint Rate = rate;
+        public readonly byte Channels = channels;
+    }
 }

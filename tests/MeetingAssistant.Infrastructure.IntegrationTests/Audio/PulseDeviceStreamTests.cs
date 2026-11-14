@@ -51,7 +51,7 @@ public sealed class PulseDeviceStreamTests
 
         AudioSourceException failure = await Should.ThrowAsync<AudioSourceException>(async () =>
         {
-            await foreach (DevicePacket packet in stream.Read(Token).WithCancellation(Token))
+            await foreach (DevicePacket packet in stream.Read(Token))
             {
                 packets.Add(packet);
             }
@@ -90,7 +90,7 @@ public sealed class PulseDeviceStreamTests
     {
         var packets = new List<DevicePacket>();
 
-        await foreach (DevicePacket packet in stream.Read(Token).WithCancellation(Token).ConfigureAwait(false))
+        await foreach (DevicePacket packet in stream.Read(Token).ConfigureAwait(false))
         {
             packets.Add(packet);
 
