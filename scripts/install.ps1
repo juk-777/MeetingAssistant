@@ -56,15 +56,16 @@ if ($Version -and $Version -notmatch '^v') { $Version = "v$Version" }
 
 # Те же файлы, что проверяет само приложение (SpeechModels в Infrastructure).
 $vadFile = 'silero_vad.onnx'
-$recognizerDirectory = 'sherpa-onnx-nemo-ctc-punct-giga-am-v3-russian-2025-12-16'
-$modelFiles = @($vadFile, "$recognizerDirectory\model.int8.onnx", "$recognizerDirectory\tokens.txt")
+$recognizerDirectory = 'sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16'
+$modelFiles = @($vadFile) + @('encoder.int8.onnx', 'decoder.onnx', 'joiner.onnx', 'tokens.txt' |
+    ForEach-Object { "$recognizerDirectory\$_" })
 
 # Модели — из релиза sherpa-onnx; SHA-256 сняты с файлов релиза и записаны здесь (те же — в download-models.sh):
 # битый или подменённый файл не ставится.
 $modelRelease = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models'
 $vadSha256 = '9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6'
 $recognizerArchive = "$recognizerDirectory.tar.bz2"
-$recognizerSha256 = '20e41e160efa6f2460a7ef6554cdbbb9e8fffb2b92e6bc708e9406bd8b9256ea'
+$recognizerSha256 = 'f9620a0099019c6afcee26525ef9ed3297fa50dd5691c1902af0c948fc1a470b'
 
 # Whisper turbo — для уточнения встречи (meeting refine); имя — SpeechModels.WhisperFile. Адрес закреплён
 # на ревизии Hugging Face: по main файл мог бы смениться и разойтись с суммой.
@@ -150,7 +151,7 @@ try {
     $unpacked = Join-Path $downloads 'models'
     $download = -not $copyFromRepository -and -not (Test-Models $models)
     if ($download) {
-        Write-Host 'Загрузка моделей (163 МБ)...'
+        Write-Host 'Загрузка моделей (172 МБ)...'
         New-Item -ItemType Directory -Force -Path $unpacked | Out-Null
         $vad = Join-Path $unpacked $vadFile
         Save-File "$modelRelease/$vadFile" $vad

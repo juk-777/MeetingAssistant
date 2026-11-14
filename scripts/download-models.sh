@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Модели распознавания в models/ репозитория: GigaAM v3 CTC с пунктуацией и Silero VAD из релиза sherpa-onnx,
+# Модели распознавания в models/ репозитория: GigaAM v3 RNNT с пунктуацией и Silero VAD из релиза sherpa-onnx,
 # Whisper tiny (75 МБ) из whisper.cpp — со сверкой SHA-256. Уже лежащие не качаются. Нужны тестам и сборке
 # из исходников; приложению модели ставит install.ps1. Whisper tiny — только тесту распознавателя уточнения:
 # он проверяет связку с Whisper.net, а не качество; модель уточнения (turbo) приложению ставит install.ps1.
@@ -12,8 +12,10 @@ set -euo pipefail
 release=https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models
 vad=silero_vad.onnx
 vad_sha256=9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6
-recognizer=sherpa-onnx-nemo-ctc-punct-giga-am-v3-russian-2025-12-16
-recognizer_sha256=20e41e160efa6f2460a7ef6554cdbbb9e8fffb2b92e6bc708e9406bd8b9256ea
+recognizer=sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16
+recognizer_sha256=f9620a0099019c6afcee26525ef9ed3297fa50dd5691c1902af0c948fc1a470b
+# Те же файлы, что проверяет приложение (SpeechModels в Infrastructure).
+recognizer_files="encoder.int8.onnx decoder.onnx joiner.onnx tokens.txt"
 # Ревизия закреплена: по main файл мог бы смениться и разойтись с суммой.
 whisper=https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1
 whisper_tiny=ggml-tiny.bin
@@ -35,7 +37,12 @@ if [ ! -f "$vad" ]; then
     fetch "$vad" "$vad_sha256"
 fi
 
-if [ ! -f "$recognizer/model.int8.onnx" ] || [ ! -f "$recognizer/tokens.txt" ]; then
+recognizer_complete=true
+for file in $recognizer_files; do
+    [ -f "$recognizer/$file" ] || recognizer_complete=false
+done
+
+if [ "$recognizer_complete" = false ]; then
     fetch "$recognizer.tar.bz2" "$recognizer_sha256"
     # Распаковка — во временный каталог: оборванная посередине не оставит в models/ модель, которая выглядит целой.
     rm -rf .unpack && mkdir .unpack

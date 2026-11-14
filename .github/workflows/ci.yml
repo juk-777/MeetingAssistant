@@ -27,7 +27,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: models
-          key: models-gigaam-v3-ctc-punct-2025-12-16-silero-vad-whisper-tiny
+          key: models-gigaam-v3-transducer-punct-2025-12-16-silero-vad-whisper-tiny
 
       - name: Модели для тестов (sherpa-onnx, Whisper tiny)
         if: steps.models.outputs.cache-hit != 'true'
