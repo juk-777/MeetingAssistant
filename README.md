@@ -62,7 +62,7 @@ Claude Code прямо в Windows нужен Git for Windows: скрипты с�
 git clone https://github.com/juk-777/MeetingAssistant.git && cd MeetingAssistant
 ./scripts/install-wsl.sh        # сборка meeting в WSL и установка в Windows
 ./scripts/install-skill.sh      # скилл — ссылкой на рабочую копию
-./scripts/download-models.sh    # модели в models/ — для тестов (./scripts/test.sh), 250 МБ
+./scripts/download-models.sh    # модели в models/ — для тестов (./scripts/test.sh), 240 МБ
 ```
 
 В PowerShell, без WSL — нужны .NET SDK 10 (в `PATH` или в `%USERPROFILE%\.dotnet`) и git:

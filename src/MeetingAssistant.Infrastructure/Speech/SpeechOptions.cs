@@ -23,23 +23,20 @@ public sealed class SpeechOptions
 internal static class SpeechModels
 {
     public const string VadFile = "silero_vad.onnx";
-    public const string RecognizerDirectory = "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16";
+    public const string RecognizerDirectory = "sherpa-onnx-nemo-ctc-punct-giga-am-v3-russian-2025-12-16";
+    public const string RecognizerModelFile = "model.int8.onnx";
+    public const string RecognizerTokensFile = "tokens.txt";
 
     public const string DownloadHint =
         "Модели ставит установка приложения (install.ps1, README) — повторить её; в репозитории — ./scripts/download-models.sh.";
 
     public static string Vad(string modelsDirectory) => Path.Combine(Path.GetFullPath(modelsDirectory), VadFile);
 
-    public static string RecognizerEncoder(string modelsDirectory) => RecognizerFile(modelsDirectory, "encoder.int8.onnx");
+    public static string RecognizerModel(string modelsDirectory) =>
+        Path.Combine(Path.GetFullPath(modelsDirectory), RecognizerDirectory, RecognizerModelFile);
 
-    public static string RecognizerDecoder(string modelsDirectory) => RecognizerFile(modelsDirectory, "decoder.onnx");
-
-    public static string RecognizerJoiner(string modelsDirectory) => RecognizerFile(modelsDirectory, "joiner.onnx");
-
-    public static string RecognizerTokens(string modelsDirectory) => RecognizerFile(modelsDirectory, "tokens.txt");
-
-    private static string RecognizerFile(string modelsDirectory, string file) =>
-        Path.Combine(Path.GetFullPath(modelsDirectory), RecognizerDirectory, file);
+    public static string RecognizerTokens(string modelsDirectory) =>
+        Path.Combine(Path.GetFullPath(modelsDirectory), RecognizerDirectory, RecognizerTokensFile);
 
     /// <summary>
     /// Whisper turbo — только для уточнения встречи: без него запись идёт, поэтому на старте он не проверяется.
@@ -50,14 +47,7 @@ internal static class SpeechModels
 
     public static IReadOnlyList<string> Missing(string modelsDirectory) =>
     [
-        .. new[]
-            {
-                Vad(modelsDirectory),
-                RecognizerEncoder(modelsDirectory),
-                RecognizerDecoder(modelsDirectory),
-                RecognizerJoiner(modelsDirectory),
-                RecognizerTokens(modelsDirectory),
-            }
+        .. new[] { Vad(modelsDirectory), RecognizerModel(modelsDirectory), RecognizerTokens(modelsDirectory) }
             .Where(path => !File.Exists(path)),
     ];
 }

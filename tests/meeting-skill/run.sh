@@ -1072,10 +1072,9 @@ models_WhenRecognizerNamedInThreePlaces_NamesMatch() {
     code=$(grep -oP 'RecognizerDirectory = "\K[^"]+' "$options")
     ps=$(grep -oP "^\\\$recognizerDirectory = '\K[^']+" "$repo/scripts/install.ps1")
     sh=$(grep -oP '^recognizer=\K\S+' "$repo/scripts/download-models.sh")
-    code_files=$(grep -oP 'RecognizerFile\(modelsDirectory, "\K[^"]+' "$options" | sort | paste -sd' ')
-    ps_files=$(grep -A1 '^\$modelFiles = ' "$repo/scripts/install.ps1" | grep -oP "'\K[^',]+\.(onnx|txt)(?=')" |
-        sort | paste -sd' ')
-    sh_files=$(grep -oP '^recognizer_files="\K[^"]+' "$repo/scripts/download-models.sh" | tr ' ' '\n' | sort | paste -sd' ')
+    code_files=$(grep -oP 'Recognizer\w+File = "\K[^"]+' "$options" | sort | paste -sd' ')
+    ps_files=$(grep '^\$modelFiles = ' "$repo/scripts/install.ps1" | grep -oP '\\\K[^"\\]+(?=")' | sort | paste -sd' ')
+    sh_files=$(grep -oP '"\$recognizer/\K[^"]+' "$repo/scripts/download-models.sh" | sort -u | paste -sd' ')
     [ -n "$code" ] && [ "$code" = "$ps" ] && [ "$code" = "$sh" ] ||
         { echo "каталог: SpeechModels '$code', install.ps1 '$ps', download-models.sh '$sh'"; return 1; }
     [ -n "$code_files" ] && [ "$code_files" = "$ps_files" ] && [ "$code_files" = "$sh_files" ] ||
