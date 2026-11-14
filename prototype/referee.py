@@ -6,7 +6,7 @@ rnnt.py beam (out/<имя>.rnnt-beam.txt), wnet с GLUE=1 (out/<имя>.turbo.tx
 
 «Совпало с turbo» — слов, которые `difflib` находит общими у вывода модели и turbo. Turbo сам выбрасывает слова-паразиты
 и ошибается, поэтому это не WER, а сравнение двух моделей с одним и тем же третьим мнением. Отдельно — фразы VAD,
-которые turbo распознал одни в своём куске (кусок совпадает с фразой), по длине до и больше 20 с.
+которые turbo распознал одни в своём куске (кусок совпадает с фразой), по длине до и больше 20.5 с.
 """
 import difflib
 import json
@@ -27,6 +27,8 @@ def agree(a, b):
     return sum(block.size for block in difflib.SequenceMatcher(None, a, b, autojunk=False).get_matching_blocks())
 
 
+# Длинная фраза — длиннее предела VAD (20 с) с запасом: обрезанные по пределу фразы (20.0–20.2 с) — не длинные.
+LONG = 20.5
 totals = defaultdict(int)
 alone = defaultdict(lambda: defaultdict(int))
 for name in sys.argv[1:]:
@@ -46,7 +48,7 @@ for name in sys.argv[1:]:
     for (k, turbo_words), (next_k, _) in zip(turbo, turbo[1:] + [(len(meta), None)]):
         if k is None or next_k != k + 1:
             continue
-        bucket = alone["> 20 с" if meta[k]["len"] > 20.5 else "≤ 20 с"]
+        bucket = alone["> 20.5 с" if meta[k]["len"] > LONG else "≤ 20.5 с"]
         bucket["phrases"] += 1
         bucket["ctc"] += len(ctc[k])
         bucket["rnnt"] += len(rnnt[k])

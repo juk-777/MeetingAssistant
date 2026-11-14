@@ -1,4 +1,4 @@
-"""Сводка пробуждений по каталогам встреч приложения (`docs/measurements.md`, «События на записях созвонов»).
+"""Сводка пробуждений по каталогам встреч приложения (`docs/measurements.md`, «Живое распознавание: RNNT против CTC»).
 
 Запуск: python events_stats.py <каталог встречи>[,<звук>]... — например, все встречи одного корня после
 `meeting replay`. Печатает только счётчики, текст фраз не выводит: записи — голос и слова живых людей.
@@ -6,6 +6,7 @@
 Длительность — по заголовку звука: audio.wav встречи, а у встречи из `meeting replay` (своего audio.wav нет) —
 поданного файла после запятой; строки и слова — по transcript.md; события — по events.log. «Фраз
 с ?» — строки со знаком вопроса: разница с событиями `вопрос` — то, что отсеял порог слов `WakePolicy`.
+Пробуждение — строка events.log (у неё может быть несколько поводов), кроме «конец записи».
 Интервал — между соседними событиями одной встречи, кроме «конец записи», по таймкоду строки события (время
 встречи, а не подачи replay).
 """
@@ -15,11 +16,15 @@ import sys
 import wave
 from collections import Counter
 
-hours = lines = words = questioned = agent = 0
+if len(sys.argv) < 2:
+    sys.exit("Запуск: python events_stats.py <каталог встречи>[,<звук>]...")
+hours = lines = words = questioned = agent = wakes = 0
 reasons = Counter()
 gaps = []
 for argument in sys.argv[1:]:
     meeting, _, audio = argument.partition(",")
+    if not os.path.isdir(meeting):
+        sys.exit(f"Нет каталога встречи: {meeting}")
     with wave.open(audio or os.path.join(meeting, "audio.wav")) as w:
         hours += w.getnframes() / w.getframerate() / 3600
     transcript = os.path.join(meeting, "transcript.md")
@@ -42,10 +47,10 @@ for argument in sys.argv[1:]:
             causes = causes.split(",")
             reasons.update(causes)
             if causes != ["конец записи"]:
+                wakes += 1
                 times.append(offsets[number])
     gaps += [b - a for a, b in zip(times, times[1:])]
 
-wakes = sum(n for reason, n in reasons.items() if reason != "конец записи")
 gaps.sort()
 print(f"встреч {len(sys.argv) - 1}, звука {hours:.2f} ч, строк {lines}, слов {words}")
 print(f"пробуждений {wakes} ({wakes / hours:.0f} в час): "
