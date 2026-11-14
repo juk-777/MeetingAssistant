@@ -92,6 +92,56 @@ public sealed class SpeechTests
         }
     }
 
+    [Theory]
+    [InlineData("encoder")]
+    [InlineData("decoder")]
+    [InlineData("joiner")]
+    [InlineData("tokens")]
+    public void Validate_WhenOneRecognizerFileMissing_FailsNamingIt(string part)
+    {
+        DirectoryInfo models = Directory.CreateTempSubdirectory("meeting-assistant-models-");
+
+        try
+        {
+            string[] files =
+            [
+                SpeechModels.Vad(models.FullName),
+                SpeechModels.RecognizerEncoder(models.FullName),
+                SpeechModels.RecognizerDecoder(models.FullName),
+                SpeechModels.RecognizerJoiner(models.FullName),
+                SpeechModels.RecognizerTokens(models.FullName),
+            ];
+            string missing = part switch
+            {
+                "encoder" => files[1],
+                "decoder" => files[2],
+                "joiner" => files[3],
+                _ => files[4],
+            };
+            Directory.CreateDirectory(Path.GetDirectoryName(missing).ShouldNotBeNull());
+            foreach (string file in files.Where(file => file != missing))
+            {
+                File.WriteAllBytes(file, []);
+            }
+
+            ValidateOptionsResult result = new SpeechOptionsValidator().Validate(
+                null,
+                new SpeechOptions { ModelsDirectory = models.FullName, RecognizerThreads = 2 });
+
+            result.Failed.ShouldBeTrue();
+            string message = result.FailureMessage.ShouldNotBeNull();
+            message.ShouldContain(missing);
+            foreach (string present in files.Where(file => file != missing))
+            {
+                message.ShouldNotContain(present);
+            }
+        }
+        finally
+        {
+            models.Delete(recursive: true);
+        }
+    }
+
     [Fact]
     public void Validate_WhenModelsPresent_Succeeds()
     {
