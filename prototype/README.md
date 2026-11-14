@@ -6,7 +6,7 @@ Python-прототип на sherpa-onnx и стенд Whisper.net, на кот�
 ## Окружение (WSL)
 
 ```
-uv venv -q -p 3.12 .venv && uv pip install -q -p .venv sherpa-onnx==2.0.1 numpy
+uv venv -q -p 3.12 .venv && uv pip install -q -p .venv sherpa-onnx==2.0.1 numpy num2words
 ```
 
 ## Файлы
@@ -23,6 +23,15 @@ uv venv -q -p 3.12 .venv && uv pip install -q -p .venv sherpa-onnx==2.0.1 numpy
   `GLUE=1` — подряд идущие фразы кусками до 30 с, как `meeting refine`.
 - `rnnt.py <seg/имя> <выход> <greedy|beam> [словарь] [сила]` — GigaAM v3 RNNT с пунктуацией по фразам из `seg/`;
   со словарём — hotwords (только `beam`). Потоки — `THREADS` (8).
+- `ctc.py <seg/имя> <выход>` — GigaAM v3 CTC с пунктуацией (модель приложения) по отрезкам из `seg/`. Потоки —
+  `THREADS` (2).
+- `openstt.py <часть> [фразы <пауза, с>]` — выборка проверочной части OpenSTT (час, зерно 35), нарезанная VAD как в
+  приложении: `seg/openstt-<часть>/` и контроль без VAD `seg/openstt-<часть>-whole/`; с «фразы» — каждая фраза
+  в VAD отдельно, `seg/openstt-<часть>-clips<пауза>/`. Архив части качает в `samples/openstt/` со сверкой SHA-256.
+- `openstt-run.sh <часть>` — замер на открытом наборе одной командой: выборка, CTC, RNNT beam, контроль, turbo,
+  WER/CER (`docs/measurements.md`, «Открытый набор»); готовое не пересчитывает. Turbo — около получаса на часть.
+- `wer.py <seg/имя> <вывод>...` — WER и CER вывода против эталона выборки; `wer.py --pair <seg/имя> <вывод> <вывод>` —
+  сколько единиц второй вывод распознал лучше и хуже первого; `wer.py --test` — проверка счёта.
 - `spm2vocab.py <tokenizer.model> > <bpe.vocab>` — словарь токенизатора GigaAM для hotwords (`docs/measurements.md`,
   «Модели»).
 - `glossary_check.py <словарь> <вывод>... [--hits]` — слова, термины словаря и повторы подряд по выводам
