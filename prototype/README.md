@@ -23,7 +23,7 @@ uv venv -q -p 3.12 .venv && uv pip install -q -p .venv sherpa-onnx==2.0.1 numpy 
   `GLUE=1` — подряд идущие фразы кусками до 30 с, как `meeting refine`.
 - `rnnt.py <seg/имя> <выход> <greedy|beam> [словарь] [сила]` — GigaAM v3 RNNT с пунктуацией по фразам из `seg/`;
   со словарём — hotwords (только `beam`). Потоки — `THREADS` (8).
-- `ctc.py <seg/имя> <выход>` — GigaAM v3 CTC с пунктуацией (модель приложения) по отрезкам из `seg/`. Потоки —
+- `ctc.py <seg/имя> <выход>` — GigaAM v3 CTC с пунктуацией (живое распознавание до #39) по отрезкам из `seg/`. Потоки —
   `THREADS` (2).
 - `openstt.py <часть> [фразы <пауза, с>]` — выборка проверочной части OpenSTT (час, зерно 35), нарезанная VAD как в
   приложении: `seg/openstt-<часть>/` и контроль без VAD `seg/openstt-<часть>-whole/`; с «фразы» — каждая фраза

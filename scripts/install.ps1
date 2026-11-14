@@ -151,7 +151,7 @@ try {
     $unpacked = Join-Path $downloads 'models'
     $download = -not $copyFromRepository -and -not (Test-Models $models)
     if ($download) {
-        Write-Host 'Загрузка моделей (172 МБ)...'
+        Write-Host 'Загрузка моделей (171 МБ)...'
         New-Item -ItemType Directory -Force -Path $unpacked | Out-Null
         $vad = Join-Path $unpacked $vadFile
         Save-File "$modelRelease/$vadFile" $vad
