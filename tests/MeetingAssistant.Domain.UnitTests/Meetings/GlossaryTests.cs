@@ -59,6 +59,8 @@ public sealed class GlossaryTests
     [InlineData(@"оплат(?=а)")]
     [InlineData(@"(?<!пред)оплата")]
     [InlineData(@"(?>сага)")]
+    [InlineData(@"(?(сага)заказ|оплата)")]
+    [InlineData(@"a{100000}")]
     public void Create_WhenPatternNeedsBacktracking_FailsWithInvalidPatternAndLineNumber(string pattern)
     {
         Result<Glossary> result = Glossary.Create(["outbox", pattern]);

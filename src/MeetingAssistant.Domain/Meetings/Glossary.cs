@@ -60,8 +60,8 @@ public sealed class Glossary
             {
                 return Result.Failure<Glossary>(new Error(
                     InvalidPatternCode,
-                    $"Строка {lineNumber} словаря — обратные ссылки, проверки вперёд и назад и атомарные группы "
-                    + $"не поддерживаются: {exception.Message}"));
+                    $"Строка {lineNumber} словаря — шаблон недоступен без возврата (обратные ссылки, проверки "
+                    + $"вперёд и назад, атомарные группы, условия, слишком длинные повторы): {exception.Message}"));
             }
         }
 
