@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Каталог встречи для скилла /meeting: из аргумента или из current.json в корне встреч.
 #
-# Корень встреч — $MEETINGS_ROOT, иначе переменная пользователя Windows Storage__MeetingsRoot, которую задаёт
-# установка (scripts/install.ps1) и читает сама запись. Она читается из реестра, а не из окружения: окружение WSL
-# и уже открытых окон не видит переменную, заданную после их запуска.
+# Корень встреч — $MEETINGS_ROOT, иначе Storage__MeetingsRoot, которую задаёт установка и читает сама запись.
+# В Windows (есть powershell.exe) это переменная пользователя, она читается из реестра, а не из окружения:
+# окружение WSL и уже открытых окон не видит переменную, заданную после их запуска. На Linux — то, что записал
+# install.sh (linux-setting).
 # Корень встреч, по которому ждёт meeting-start, тот передаёт и окну записи: источник у них один — этот скрипт.
 #
 # Путь печатается так, как его видит эта оболочка: путь Windows (D:\…), который пишет процесс записи под Windows,
@@ -42,9 +43,12 @@ windows_root() {
 meetings_root() {
     local root=${MEETINGS_ROOT:-}
     [ -n "$root" ] || root=$(windows_root)
+    if [ -z "$root" ] && ! command -v powershell.exe > /dev/null; then
+        root=$(bash "$here/linux-setting" root)
+    fi
     if [ -z "$root" ]; then
         # Код 3 — «приложение записи не установлено»: по нему скилл предлагает установку (meeting-install).
-        printf '%s\n' "Приложение записи не установлено: нет ни MEETINGS_ROOT, ни переменной пользователя Windows Storage__MeetingsRoot (её задаёт установка). Поставить — meeting-install, или передать каталог встречи: /meeting <каталог>." >&2
+        printf '%s\n' "Приложение записи не установлено: нет ни MEETINGS_ROOT, ни Storage__MeetingsRoot (её задаёт установка). Поставить — meeting-install, или передать каталог встречи: /meeting <каталог>." >&2
         exit 3
     fi
     to_local "$root"

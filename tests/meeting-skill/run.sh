@@ -139,7 +139,7 @@ skip_reason() {
     if [[ $OSTYPE == msys* || $OSTYPE == cygwin* ]]; then
         case $1 in
             install_*) echo "install-skill.sh — путь разработчика в WSL; в Windows скилл из рабочей копии — claude --plugin-dir" ;;
-            linuxsetup_*) echo "install.sh — установка на Linux; в Windows — install.ps1" ;;
+            linux*_*) echo "путь Linux (install.sh, окно эмулятора терминала, notify-send); в Windows — powershell.exe" ;;
             *_WhenSkillLinked_*) echo "ссылка на скилл — путь разработчика в WSL (install-skill.sh); ln -s Git Bash копирует" ;;
             *) return 1 ;;
         esac
@@ -1065,7 +1065,7 @@ models_WhenWhisperFileNamedInSeveralPlaces_NamesMatch() {
     code=$(grep -oP 'WhisperFile = "\K[^"]+' "$repo/src/MeetingAssistant.Infrastructure/Speech/SpeechOptions.cs")
     ps=$(grep -oP "^\\\$whisperFile = '\K[^']+" "$repo/scripts/install.ps1")
     linux=$(grep -oP '^whisper_file=\K\S+' "$repo/scripts/install.sh")
-    refine=$(grep -oP '"\K[^"]+\.bin(?=")' "$repo/plugins/meeting/skills/meeting/scripts/meeting-refine")
+    refine=$(grep -oP '^whisper_file=\K\S+' "$repo/plugins/meeting/skills/meeting/scripts/meeting-refine")
     [ -n "$code" ] && [ "$code" = "$ps" ] && [ "$code" = "$linux" ] && [ "$code" = "$refine" ] ||
         { echo "SpeechModels '$code', install.ps1 '$ps', install.sh '$linux', meeting-refine '$refine'"; return 1; }
 }
@@ -1103,11 +1103,12 @@ linuxsetup_home() {
         "$models/$(grep -oP '^whisper_file=\K\S+' "$repo/scripts/install.sh")"
 }
 
-# linuxsetup_release <версия>: архив с заглушкой meeting, которая печатает версию, и его сумма.
+# linuxsetup_release <версия> [тело заглушки]: архив с заглушкой meeting и его сумма. Без тела заглушка на любой
+# вызов печатает версию.
 linuxsetup_release() {
     local stage="$work/release-stage"
     rm -rf "$stage" "$work/release" && mkdir -p "$stage" "$work/release"
-    printf '#!/usr/bin/env bash\necho %s\n' "$1" > "$stage/meeting"
+    printf '#!/usr/bin/env bash\n%s\n' "${2:-echo $1}" > "$stage/meeting"
     chmod +x "$stage/meeting"
     tar -czf "$work/release/meeting-linux-x64.tar.gz" -C "$stage" .
     (cd "$work/release" && sha256sum meeting-linux-x64.tar.gz > meeting-linux-x64.tar.gz.sha256)
@@ -1238,6 +1239,229 @@ linuxsetup_WhenWhisperChecksumWrong_RefusesAndDoesNotPlaceIt() {
     fi
     grep -q "Контрольная сумма $whisper" "$work/setup.log" || { cat "$work/setup.log"; return 1; }
     [ ! -e "$home/.local/share/meeting-assistant/models/$whisper" ] || { echo "Whisper поставлен"; return 1; }
+}
+
+# Скилл на Linux. PATH — каталог ссылок на программы машины без powershell.exe, эмуляторов терминала и notify-send
+# (WSL видит Windows, у разработчика на Linux есть настоящий терминал), впереди — заглушки теста.
+linux_bin() {
+    [ ! -d "$work/linux-bin" ] || return 0
+    mkdir -p "$work/linux-bin"
+    local dir file name
+    local IFS=:
+    for dir in $PATH; do
+        [[ $dir != /mnt/* ]] || continue
+        for file in "$dir"/*; do
+            name=${file##*/}
+            case $name in
+                powershell.exe | x-terminal-emulator | gnome-terminal | konsole | xfce4-terminal | xterm | notify-send) continue ;;
+            esac
+            if [ -x "$file" ] && [ ! -d "$file" ] && [ ! -e "$work/linux-bin/$name" ]; then
+                ln -s "$file" "$work/linux-bin/$name"
+            fi
+        done
+    done
+}
+
+# linux_skill <каталог заглушек> <скрипт или путь> <аргументы…>: скрипт скилла как на Linux, домашний каталог — $home.
+linux_skill() {
+    local stubs=$1 script=$2
+    shift 2
+    [[ $script == */* ]] || script="$bin/$script"
+    linux_bin
+    mkdir -p "$stubs"
+    env -u XDG_DATA_HOME -u Storage__MeetingsRoot -u Speech__ModelsDirectory -u MEETINGS_ROOT \
+        HOME="$home" PATH="$stubs:$work/linux-bin" bash "$script" "$@"
+}
+
+# linux_installed: install.sh ставит в $home заглушку meeting. На --version она отвечает 9.9.9, на остальное пишет
+# аргументы и настройки в linux-meeting.* и кладёт приготовленный start.next как current.json корня встреч.
+linux_installed() {
+    linuxsetup_home
+    linuxsetup_release 9.9.9 "$(cat <<EOF
+[ "\$1" != --version ] || { echo 9.9.9; exit 0; }
+printf '%s\n' "\$@" > "$work/linux-meeting.args"
+printf '%s\n%s\n' "\$Storage__MeetingsRoot" "\$Speech__ModelsDirectory" > "$work/linux-meeting.env"
+[ ! -f "$work/start.next" ] || cp "$work/start.next" "\$Storage__MeetingsRoot/current.json"
+EOF
+)"
+    rm -rf "$work/linux-meeting.args" "$work/linux-meeting.env" "$work/start.next" "$work/linux-root" \
+        "$work/terminal.used" "$work/stub-term"
+    linuxsetup_run --meetings-root "$work/linux-root" || { cat "$work/setup.log"; return 1; }
+}
+
+# stub_terminal <каталог> <эмулятор> <ключ>: принимает команду после своего ключа и исполняет её, как окно.
+stub_terminal() {
+    mkdir -p "$1"
+    cat > "$1/$2" <<EOF
+#!/usr/bin/env bash
+[ "\$1" = '$3' ] || { echo "ключ \$1 вместо $3" >&2; exit 9; }
+shift
+echo '$2' > "$work/terminal.used"
+"\$@"
+EOF
+    chmod +x "$1/$2"
+}
+
+linuxdir_WhenInstalledByInstallSh_FindsItsRootModelsAndApp() {
+    linux_installed || return 1
+    local got
+    got=$(linux_skill "$work/stub-none" meeting-dir --root) || return 1
+    [ "$got" = "$work/linux-root" ] || { echo "корень: $got"; return 1; }
+    got=$(linux_skill "$work/stub-none" linux-setting models) || return 1
+    [ "$got" = "$home/.local/share/meeting-assistant/models" ] || { echo "модели: $got"; return 1; }
+    got=$(linux_skill "$work/stub-none" linux-setting app) || return 1
+    [ "$("$got" --version)" = 9.9.9 ] || { echo "meeting: $got"; return 1; }
+}
+
+linuxdir_WhenProfileHasNoBlock_TakesEnvironment() {
+    home=$(mktemp -d "$work/home.XXXX")
+    linux_bin
+    local got
+    got=$(env -u MEETINGS_ROOT HOME="$home" PATH="$work/linux-bin" Storage__MeetingsRoot="$work/env-root" \
+        bash "$bin/meeting-dir" --root) || return 1
+    [ "$got" = "$work/env-root" ] || { echo "корень: $got"; return 1; }
+}
+
+linuxdir_WhenNothingInstalled_ExitsAsNotInstalled() {
+    home=$(mktemp -d "$work/home.XXXX")
+    local code=0
+    linux_skill "$work/stub-none" meeting-dir --root > /dev/null 2>&1 || code=$?
+    [ "$code" -eq 3 ] || { echo "код: $code"; return 1; }
+}
+
+linuxstart_WhenNewMeetingAppears_PassesNameAsIsAndPrintsIt() {
+    linux_installed || return 1
+    new_meeting
+    current_json "$work/start.next" new "$meeting"
+    stub_terminal "$work/stub-term" x-terminal-emulator -e
+    printf 'термин\n' > "$work/словарь.txt"
+    local name='Встреча "с" $HOME и `id`' got
+    got=$(cd "$work" && MEETING_START_TIMEOUT=5 linux_skill "$work/stub-term" meeting-start "$name" 'словарь.txt') ||
+        return 1
+    [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
+    [ "$(cat "$work/linux-meeting.args")" = "$(printf '%s\n' start "$name" --glossary "$work/словарь.txt")" ] ||
+        { cat "$work/linux-meeting.args"; return 1; }
+    [ "$(cat "$work/linux-meeting.env")" = "$(printf '%s\n' "$work/linux-root" "$home/.local/share/meeting-assistant/models")" ] ||
+        { cat "$work/linux-meeting.env"; return 1; }
+}
+
+linuxstart_WhenOnlyOneTerminal_OpensItWithItsKey() {
+    linux_installed || return 1
+    local pair terminal number=0
+    for pair in 'x-terminal-emulator -e' 'gnome-terminal --' 'konsole -e' 'xfce4-terminal -x' 'xterm -e'; do
+        terminal=${pair% *}
+        number=$((number + 1))
+        new_meeting
+        current_json "$work/start.next" "new$number" "$meeting"
+        rm -rf "$work/stub-term" "$work/terminal.used"
+        stub_terminal "$work/stub-term" "$terminal" "${pair#* }"
+        MEETING_START_TIMEOUT=5 linux_skill "$work/stub-term" meeting-start 'x' > /dev/null 2> "$work/start.err" ||
+            { echo "$terminal:"; cat "$work/start.err"; return 1; }
+        [ "$(cat "$work/terminal.used")" = "$terminal" ] || { echo "$terminal: открыт $(cat "$work/terminal.used")"; return 1; }
+    done
+}
+
+linuxstart_WhenSeveralTerminals_TakesSystemChoiceFirst() {
+    linux_installed || return 1
+    new_meeting
+    current_json "$work/start.next" new "$meeting"
+    stub_terminal "$work/stub-term" gnome-terminal --
+    stub_terminal "$work/stub-term" x-terminal-emulator -e
+    MEETING_START_TIMEOUT=5 linux_skill "$work/stub-term" meeting-start 'x' > /dev/null || return 1
+    [ "$(cat "$work/terminal.used")" = x-terminal-emulator ] || { cat "$work/terminal.used"; return 1; }
+}
+
+linuxstart_WhenNoTerminal_RefusesWithCommandToRun() {
+    linux_installed || return 1
+    if MEETING_START_TIMEOUT=2 linux_skill "$work/stub-none" meeting-start 'x' > /dev/null 2> "$work/start.err"; then
+        echo "отказа нет"
+        return 1
+    fi
+    grep -qF "$home/.local/share/meeting-assistant/app/meeting start x" "$work/start.err" ||
+        { cat "$work/start.err"; return 1; }
+    [ ! -f "$work/linux-meeting.args" ] || { echo "meeting запущен"; return 1; }
+}
+
+linuxstart_WhenAppNotInstalled_ExitsAsNotInstalled() {
+    linux_installed || return 1
+    rm -rf "$home/.local/share/meeting-assistant/app"
+    stub_terminal "$work/stub-term" x-terminal-emulator -e
+    local code=0
+    MEETING_START_TIMEOUT=2 linux_skill "$work/stub-term" meeting-start 'x' > /dev/null 2>&1 || code=$?
+    [ "$code" -eq 3 ] || { echo "код: $code"; return 1; }
+}
+
+linuxrefine_WhenMeetingFinished_OpensWindowForItAndPrintsIt() {
+    linux_installed || return 1
+    new_meeting
+    printf '1\t1762774261.000\tконец записи\n' > "$meeting/events.log"
+    stub_terminal "$work/stub-term" x-terminal-emulator -e
+    local got
+    got=$(linux_skill "$work/stub-term" meeting-refine "$meeting") || return 1
+    [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
+    [ "$(cat "$work/linux-meeting.args")" = "$(printf '%s\n' refine "$meeting")" ] ||
+        { cat "$work/linux-meeting.args"; return 1; }
+}
+
+linuxrefine_WhenWhisperMissing_ExitsAsNotInstalledWithoutWindow() {
+    linux_installed || return 1
+    rm "$home/.local/share/meeting-assistant/models/$(grep -oP '^whisper_file=\K\S+' "$repo/scripts/install.sh")"
+    new_meeting
+    printf '1\t1762774261.000\tконец записи\n' > "$meeting/events.log"
+    stub_terminal "$work/stub-term" x-terminal-emulator -e
+    local code=0
+    linux_skill "$work/stub-term" meeting-refine "$meeting" > /dev/null 2>&1 || code=$?
+    [ "$code" -eq 3 ] || { echo "код: $code"; return 1; }
+    [ ! -f "$work/terminal.used" ] || { echo "окно открыто"; return 1; }
+}
+
+linuxappversion_WhenInstalledAppOlderThanPlugin_RefusesWithCode4() {
+    linux_installed || return 1
+    local plugin code
+    for plugin in 10.0.0 9.9.9 1.0.0; do
+        plugin_copy "$plugin"
+        code=0
+        linux_skill "$work/stub-none" "$work/plugin/skills/meeting/scripts/check-app-version" > /dev/null 2>&1 || code=$?
+        if [ "$plugin" = 10.0.0 ]; then
+            [ "$code" -eq 4 ] || { echo "$plugin: код $code"; return 1; }
+        else
+            [ "$code" -eq 0 ] || { echo "$plugin: код $code"; return 1; }
+        fi
+    done
+}
+
+linuxappversion_WhenAppNotInstalled_ExitsAsNotInstalled() {
+    home=$(mktemp -d "$work/home.XXXX")
+    plugin_copy 1.0.0
+    local code=0
+    linux_skill "$work/stub-none" "$work/plugin/skills/meeting/scripts/check-app-version" > /dev/null 2>&1 || code=$?
+    [ "$code" -eq 3 ] || { echo "код: $code"; return 1; }
+}
+
+linuxinstall_WhenReleasesInDirectory_RunsTheirInstallSh() {
+    linuxsetup_home
+    linuxsetup_release 1.2.3
+    cp "$repo/scripts/install.sh" "$work/release/"
+    MEETING_RELEASES="$work/release" linux_skill "$work/stub-none" meeting-install > "$work/setup.log" 2>&1 ||
+        { cat "$work/setup.log"; return 1; }
+    [ "$("$home/.local/bin/meeting" --version)" = 1.2.3 ] || { echo "meeting не поставлен"; return 1; }
+}
+
+linuxnotify_WhenNotifySendPresent_PassesTitleAndJoinedText() {
+    home=$(mktemp -d "$work/home.XXXX")
+    mkdir -p "$work/stub-notify"
+    printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s/notify.args"\n' "$work" > "$work/stub-notify/notify-send"
+    chmod +x "$work/stub-notify/notify-send"
+    linux_skill "$work/stub-notify" meeting-notify $'-первая\nвторая' || return 1
+    [ "$(tail -3 "$work/notify.args")" = "$(printf '%s\n' -- MeetingAssistant '-первая вторая')" ] ||
+        { cat "$work/notify.args"; return 1; }
+}
+
+linuxnotify_WhenNoNotifySend_ExitsQuietly() {
+    home=$(mktemp -d "$work/home.XXXX")
+    local output
+    output=$(linux_skill "$work/stub-none" meeting-notify 'текст' 2>&1) || { echo "отказ: $output"; return 1; }
+    [ -z "$output" ] || { echo "вывод: $output"; return 1; }
 }
 
 release_WhenPluginVersionMatchesTag_PrintsVersion() {

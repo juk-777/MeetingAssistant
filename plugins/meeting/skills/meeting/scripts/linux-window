@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Окно приложения записи на Linux: meeting <аргументы> в новом окне эмулятора терминала, после конца — ожидание
+# клавиши. Зовут meeting-start и meeting-refine.
+#
+# Окно своё, как в Windows: в нём видны устройства и ход, остановка — Ctrl+C. После итога или отказа окно ждёт
+# клавишу: и итог, и причина отказа видны только в нём. Эмулятор — первый найденный из списка ниже. Аргументы уходят
+# окну позиционными параметрами bash -c, а не текстом команды:
+# кавычки и $ в имени встречи не исполняются.
+#
+# Код 3 — приложение записи не установлено (нет meeting или каталога моделей): скилл предлагает meeting-install.
+# Эмулятора нет — код 1 и команда для ручного запуска.
+#
+# linux-window <корень встреч> <каталог моделей> <аргументы meeting…>
+set -euo pipefail
+
+[ $# -ge 3 ] || { echo "linux-window <корень встреч> <каталог моделей> <аргументы meeting…>" >&2; exit 2; }
+
+here="$(cd "$(dirname "$0")" && pwd)"
+root=$1
+models=$2
+shift 2
+
+app=$(bash "$here/linux-setting" app)
+[ -x "$app" ] || { echo "Приложение записи не установлено: нет $app. Поставить — meeting-install." >&2; exit 3; }
+[ -n "$models" ] ||
+    { echo "Приложение записи не установлено: нет Speech__ModelsDirectory. Поставить — meeting-install." >&2; exit 3; }
+
+# shellcheck disable=SC2016 # параметры раскрывает оболочка окна
+window='Storage__MeetingsRoot=$1 Speech__ModelsDirectory=$2 "$3" "${@:4}"
+read -rsn1 -p "Окно можно закрыть: любая клавиша." || true'
+
+# Эмулятор и его ключ, после которого идут команда и её аргументы. Первым — выбор системы (Debian, Ubuntu), дальше —
+# эмуляторы GNOME, KDE, Xfce и xterm, который есть почти везде.
+terminal=()
+for candidate in 'x-terminal-emulator -e' 'gnome-terminal --' 'konsole -e' 'xfce4-terminal -x' 'xterm -e'; do
+    if command -v "${candidate%% *}" > /dev/null; then
+        read -ra terminal <<< "$candidate"
+        break
+    fi
+done
+if [ ${#terminal[@]} -eq 0 ]; then
+    {
+        echo "Нет эмулятора терминала (x-terminal-emulator, gnome-terminal, konsole, xfce4-terminal, xterm). Запустите в терминале:"
+        printf '  Storage__MeetingsRoot=%q Speech__ModelsDirectory=%q %q' "$root" "$models" "$app"
+        printf ' %q' "$@"
+        echo
+    } >&2
+    exit 1
+fi
+
+# Эмулятор может и вернуться сразу (gnome-terminal отдаёт окно своему серверу), и жить вместе с окном (xterm):
+# в фоне, отказ на старте виден за секунду.
+"${terminal[@]}" bash -c "$window" meeting "$root" "$models" "$app" "$@" < /dev/null > /dev/null 2>&1 &
+opener=$!
+sleep 1
+if ! kill -0 "$opener" 2> /dev/null; then
+    wait "$opener" || { echo "Окно не открылось: ${terminal[0]} вышел с ошибкой." >&2; exit 1; }
+fi
