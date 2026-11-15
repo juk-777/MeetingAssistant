@@ -58,6 +58,9 @@
 - Те же тесты скилла идут в Git Bash — так скилл работает в Claude Code для Windows: задание CI на `windows-latest`,
   локально из корня клона в PowerShell `& "C:\Program Files\Git\bin\bash.exe" tests/meeting-skill/run.sh`. Тесты
   установки скилла ссылкой (`install-skill.sh`, путь разработчика в WSL) там пропущены (строка `skip` с причиной).
+- Путь Linux (`install.sh`, окно в эмуляторе терминала, `notify-send`) — тесты `linux*_`: `PATH` из ссылок на
+  программы машины без `powershell.exe`, эмуляторов терминала и `notify-send`, впереди заглушки. Так они идут и в
+  WSL, где Windows видна, и на Linux с настоящим терминалом. В Git Bash пропущены.
   `jq` в прогоне запрещён заглушкой: в Git for Windows его нет, и в репозитории он не нужен нигде — JSON читает
   `current-field` скилла, в том числе шаг выпуска.
 
