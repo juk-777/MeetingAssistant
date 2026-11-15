@@ -46,7 +46,7 @@ fail() { echo "$1" >&2; exit 1; }
 [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] ||
     fail "Скрипт ставит meeting на Linux x86-64. Windows — install.ps1."
 for tool in curl tar sha256sum; do
-    command -v "$tool" > /dev/null || fail "Нет $tool: поставьте его (Ubuntu: пакеты curl, tar, coreutils)."
+    command -v "$tool" > /dev/null || fail "Нет $tool: поставьте его (пакеты curl, tar, coreutils)."
 done
 
 base="${XDG_DATA_HOME:-$HOME/.local/share}/meeting-assistant"

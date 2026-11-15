@@ -71,9 +71,10 @@
 ### Скилл на Linux — вторым pull request того же issue
 
 - Скрипты различают Windows (WSL и Git Bash) и Linux.
-- **Окно записи.** На Linux `meeting start` открывается в эмуляторе терминала: `x-terminal-emulator`, иначе
-  `gnome-terminal`. Остановка — Ctrl+C, как на Windows. Эмулятора нет — скрипт печатает команду для ручного
-  запуска.
+- **Окно записи.** На Linux `meeting start` открывается в эмуляторе терминала — первом найденном из
+  `x-terminal-emulator`, `gnome-terminal`, `konsole`, `xfce4-terminal`, `xterm`. Остановка — Ctrl+C, как на
+  Windows. Эмулятора нет — скрипт печатает команду для ручного запуска. Список расширен владельцем 15.11.2026: в
+  принятой спеке были только первые два, а это лишь Debian, Ubuntu и GNOME.
 - **Уведомление** — `notify-send`.
 - **Установка** — `install.sh`.
 - **Сверка версии** — `meeting --version`.

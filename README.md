@@ -41,9 +41,11 @@ powershell.exe -c 'iwr https://github.com/juk-777/MeetingAssistant/releases/late
 `-MeetingsRoot <каталог>`) и `Speech__ModelsDirectory`, добавляет `meeting` в `PATH` — виден в новом окне
 терминала. Конкретная версия — `-Version v0.1.0`; установленная — `meeting --version`.
 
-#### Ubuntu
+#### Linux
 
-Linux x86-64 с PulseAudio или PipeWire (в Ubuntu с рабочим столом — по умолчанию). Нужны `curl` и `libpulse0`:
+Дистрибутив не важен: нужны x86-64 с glibc (не Alpine), сервер звука PulseAudio или PipeWire, ICU для .NET (на
+рабочем столе всё это стоит по умолчанию) и `curl`. Ещё нужна библиотека `libpulse`. Пакет называется `libpulse0` в Debian и Ubuntu,
+`pulseaudio-libs` в Fedora, `libpulse` в Arch.
 
 ```bash
 curl -fsSL https://github.com/juk-777/MeetingAssistant/releases/latest/download/install.sh | bash
@@ -56,8 +58,7 @@ curl -fsSL https://github.com/juk-777/MeetingAssistant/releases/latest/download/
 `--version v0.1.0`.
 
 Запись — `meeting start "<имя>"` в терминале, остановка — Ctrl+C. Микрофон по умолчанию пишется в «Я», монитор
-устройства вывода по умолчанию — в «Собеседники». Скилл на Linux пока не открывает окно записи и не ставит
-приложение сам.
+устройства вывода по умолчанию — в «Собеседники».
 
 ### Скилл `/meeting`
 

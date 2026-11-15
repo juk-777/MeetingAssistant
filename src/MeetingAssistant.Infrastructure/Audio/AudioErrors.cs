@@ -22,7 +22,7 @@ public static class AudioErrors
     public static readonly Error NoSoundLibrary = new(
         NoSoundLibraryCode,
         "Нет libpulse-simple.so.0 — через неё meeting пишет звук с сервера PulseAudio или PipeWire. " +
-        "Ubuntu и Debian: sudo apt install libpulse0.");
+        "Пакет: libpulse0 в Debian и Ubuntu, pulseaudio-libs в Fedora, libpulse в Arch.");
 
     public static Error NoDevice(string kind) =>
         new(NoDeviceCode, $"В Windows нет устройства {kind} по умолчанию.");
