@@ -1382,6 +1382,18 @@ linuxstart_WhenNoTerminal_RefusesWithCommandToRun() {
     [ ! -f "$work/linux-meeting.args" ] || { echo "meeting запущен"; return 1; }
 }
 
+linuxstart_WhenTerminalFailsToOpen_RefusesWithoutWaiting() {
+    linux_installed || return 1
+    stub_terminal "$work/stub-term" x-terminal-emulator --не-тот-ключ
+    local started=$SECONDS
+    if MEETING_START_TIMEOUT=30 linux_skill "$work/stub-term" meeting-start 'x' > /dev/null 2> "$work/start.err"; then
+        echo "отказа нет"
+        return 1
+    fi
+    [ $((SECONDS - started)) -lt 10 ] || { echo "ждал новую встречу"; return 1; }
+    grep -q 'не открылось' "$work/start.err" || { cat "$work/start.err"; return 1; }
+}
+
 linuxstart_WhenAppNotInstalled_ExitsAsNotInstalled() {
     linux_installed || return 1
     rm -rf "$home/.local/share/meeting-assistant/app"
