@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# ОС, в которой работает приложение записи для этой сессии: windows или linux. Зовут скрипты скилла, которым нужно
+# окно, установка или сверка версии.
+#
+# windows — есть powershell.exe: сессия в WSL или в Git Bash, запись идёт в Windows. linux — Linux не в WSL. WSL без
+# powershell.exe (interop выключен) — отказ: запись в WSL не идёт, системного звука Windows там нет, а путь Linux
+# записал бы встречу без собеседников. Прочие ОС — отказ.
+#
+# platform
+set -euo pipefail
+
+if command -v powershell.exe > /dev/null; then
+    echo windows
+elif [ -n "${WSL_DISTRO_NAME:-}" ]; then
+    echo "WSL без powershell.exe: запись идёт в Windows, а в WSL нет системного звука Windows. Включите запуск программ Windows из WSL (interop и appendWindowsPath в /etc/wsl.conf) и повторите." >&2
+    exit 1
+elif [ "$(uname -s)" = Linux ]; then
+    echo linux
+else
+    echo "Приложение записи работает в Windows (из WSL или Git Bash) и на Linux." >&2
+    exit 1
+fi

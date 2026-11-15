@@ -5,8 +5,7 @@ sherpa-onnx), транскрипт в файл, подсказки рабоче�
 
 Две части:
 - **приложение записи `meeting`** — пишет микрофон («Я») и системный звук («Собеседники»), распознаёт речь
-  и дописывает транскрипт в каталог встречи. Windows (WASAPI) и Linux (PulseAudio или PipeWire); на Linux скилл
-  пока не открывает окно записи сам — [#16](https://github.com/juk-777/MeetingAssistant/issues/16);
+  и дописывает транскрипт в каталог встречи. Windows (WASAPI) и Linux (PulseAudio или PipeWire);
 - **скилл `/meeting` для Claude Code** — сессия Claude Code запускает запись, просыпается по событиям
   и подсказывает: по проекту — из его кода и доков, по остальному — из знаний модели; после встречи пишет протокол, по команде — сверив
   с транскриптом Whisper.
@@ -41,9 +40,11 @@ powershell.exe -c 'iwr https://github.com/juk-777/MeetingAssistant/releases/late
 `-MeetingsRoot <каталог>`) и `Speech__ModelsDirectory`, добавляет `meeting` в `PATH` — виден в новом окне
 терминала. Конкретная версия — `-Version v0.1.0`; установленная — `meeting --version`.
 
-#### Ubuntu
+#### Linux
 
-Linux x86-64 с PulseAudio или PipeWire (в Ubuntu с рабочим столом — по умолчанию). Нужны `curl` и `libpulse0`:
+Дистрибутив не важен: нужны x86-64 с glibc (не Alpine), сервер звука PulseAudio или PipeWire, ICU для .NET (на
+рабочем столе всё это стоит по умолчанию) и `curl`. Ещё нужна библиотека `libpulse`. Пакет называется `libpulse0` в Debian и Ubuntu,
+`pulseaudio-libs` в Fedora, `libpulse` в Arch.
 
 ```bash
 curl -fsSL https://github.com/juk-777/MeetingAssistant/releases/latest/download/install.sh | bash
@@ -56,12 +57,11 @@ curl -fsSL https://github.com/juk-777/MeetingAssistant/releases/latest/download/
 `--version v0.1.0`.
 
 Запись — `meeting start "<имя>"` в терминале, остановка — Ctrl+C. Микрофон по умолчанию пишется в «Я», монитор
-устройства вывода по умолчанию — в «Собеседники». Скилл на Linux пока не открывает окно записи и не ставит
-приложение сам.
+устройства вывода по умолчанию — в «Собеседники».
 
 ### Скилл `/meeting`
 
-В Claude Code — в WSL или прямо в Windows:
+В Claude Code — на Linux, в WSL или прямо в Windows:
 
 ```
 /plugin marketplace add juk-777/MeetingAssistant
@@ -71,6 +71,10 @@ curl -fsSL https://github.com/juk-777/MeetingAssistant/releases/latest/download/
 Claude Code прямо в Windows нужен Git for Windows: скрипты скилла — bash, их выполняет Git Bash, и без него
 у Claude Code нет `Monitor`, на котором держатся подсказки. Плагины у Claude Code в WSL и в Windows свои — ставить
 в том, где идёт работа.
+
+На Linux окно записи открывается в терминале, выбранном в системе (`xdg-terminal-exec`). Его нет — в первом
+найденном из `ptyxis`, `x-terminal-emulator`, `gnome-terminal`, `konsole`, `xfce4-terminal`, `xterm`. Подсказка
+всплывает через `notify-send`, если он есть. В WSL скилл записывает через Windows: без `powershell.exe` — отказ.
 
 Приложение записи ещё не стоит — `/meeting start` предложит поставить его сам.
 
@@ -118,7 +122,7 @@ git clone https://github.com/juk-777/MeetingAssistant.git && cd MeetingAssistant
 - `/meeting start <имя> [файл словаря]` — открывает окно записи и подключает сессию к встрече. В окне видны
   устройства и что запись идёт; остановка — Ctrl+C или закрытие окна. После Ctrl+C окно показывает итог (строки,
   события, CPU и пик памяти) и ждёт клавишу.
-- `/meeting` — подключиться к уже идущей встрече (запущенной `meeting start "<имя>"` в терминале Windows),
+- `/meeting` — подключиться к уже идущей встрече (запущенной `meeting start "<имя>"` в терминале),
   `/meeting <каталог встречи>` — к конкретной.
 - Лучше в наушниках: без них микрофон слышит собеседников из динамиков, и их слова могут попадать в «Я»
   (насколько — проверяется в [#13](https://github.com/juk-777/MeetingAssistant/issues/13)).
@@ -135,7 +139,7 @@ git clone https://github.com/juk-777/MeetingAssistant.git && cd MeetingAssistant
 
 Проснувшись, сессия читает новые строки вместе со всей встречей и либо молчит, либо даёт подсказку в 2–3 строки
 с источником (`файл:строка`, issue, документ) или с пометкой `общее`. Подсказка — в терминале сессии
-и всплывающим уведомлением Windows, которое видно поверх звонка; при подключённом Remote Control — ещё и на
+и всплывающим уведомлением, которое видно поверх звонка; при подключённом Remote Control — ещё и на
 телефоне. Факт о проекте — только со сверкой по коду и докам; общий вопрос (технология, подход, «как лучше») —
 ответ из знаний модели с пометкой `общее`, а если в проекте есть что добавить, — ещё строка о том, как у нас.
 

@@ -46,7 +46,7 @@ fail() { echo "$1" >&2; exit 1; }
 [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] ||
     fail "Скрипт ставит meeting на Linux x86-64. Windows — install.ps1."
 for tool in curl tar sha256sum; do
-    command -v "$tool" > /dev/null || fail "Нет $tool: поставьте его (Ubuntu: пакеты curl, tar, coreutils)."
+    command -v "$tool" > /dev/null || fail "Нет $tool: поставьте его (пакеты curl, tar, coreutils)."
 done
 
 base="${XDG_DATA_HOME:-$HOME/.local/share}/meeting-assistant"
@@ -182,7 +182,7 @@ if [ -n "$download" ]; then
     if command -v bzip2 > /dev/null; then
         tar -xjf "$downloads/$recognizer.tar.bz2" -C "$unpacked"
     else
-        command -v python3 > /dev/null || fail "Нет ни bzip2, ни python3 для распаковки модели: sudo apt install bzip2."
+        command -v python3 > /dev/null || fail "Нет ни bzip2, ни python3 для распаковки модели: поставьте пакет bzip2."
         python3 -c 'import sys, tarfile; tarfile.open(sys.argv[1]).extractall(sys.argv[2])' \
             "$downloads/$recognizer.tar.bz2" "$unpacked"
     fi

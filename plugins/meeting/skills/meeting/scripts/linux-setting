@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Где установка Linux (scripts/install.sh) держит приложение записи: корень встреч, каталог моделей, meeting.
+#
+# Корень и модели — из блока meeting-assistant в ~/.profile, иначе из окружения (Storage__MeetingsRoot,
+# Speech__ModelsDirectory): окружение сессии не видит блока, который установка дописала после входа в систему, —
+# как окружение WSL не видит переменной из реестра. Нет значения — пустой вывод. meeting — по месту установки,
+# есть он там или нет.
+#
+# linux-setting root|models|app
+set -euo pipefail
+
+case "${1:-}" in
+    app) printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/meeting-assistant/app/meeting"; exit 0 ;;
+    root) name=Storage__MeetingsRoot ;;
+    models) name=Speech__ModelsDirectory ;;
+    *) echo "linux-setting root|models|app" >&2; exit 2 ;;
+esac
+
+# Те же строки блока, что пишет install.sh.
+begin='# >>> meeting-assistant >>>'
+end='# <<< meeting-assistant <<<'
+value=
+if [ -f "$HOME/.profile" ]; then
+    # Строка export из блока, выполненная в подоболочке, возвращает значение как было записано.
+    value=$(sed -n "/^$begin\$/,/^$end\$/{/^export $name=/p}" "$HOME/.profile" |
+        (unset "$name"; . /dev/stdin; printf '%s' "${!name:-}"))
+fi
+[ -n "$value" ] || value=${!name:-}
+[ -z "$value" ] || printf '%s\n' "$value"

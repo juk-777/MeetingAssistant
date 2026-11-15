@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Всплывающее уведомление Windows с подсказкой: на созвоне в фокусе приложение звонка, а не терминал.
-# Строки текста склеиваются пробелом — переносит Windows; показ длинный (≈ 25 с), пропущенное остаётся в центре
+# Всплывающее уведомление с подсказкой: на созвоне в фокусе приложение звонка, а не терминал.
+# Строки текста склеиваются пробелом — переносит система; показ длинный (≈ 25 с), пропущенное остаётся в центре
 # уведомлений.
 #
-# Показывает его powershell.exe, поэтому терминал, в котором открыта сессия, роли не играет. powershell.exe виден
-# из WSL и из Windows; где его нет (Linux, macOS), скрипт ничего не делает.
+# В Windows его показывает powershell.exe (виден из WSL и из Git Bash), на Linux — notify-send, поэтому терминал,
+# в котором открыта сессия, роли не играет. Нет ни того, ни другого (macOS, Linux без notify-send) — скрипт ничего
+# не делает.
 #
 # meeting-notify <текст>
 set -euo pipefail
@@ -14,13 +15,24 @@ if [ $# -ne 1 ]; then
     exit 2
 fi
 
-command -v powershell.exe > /dev/null || exit 0
+text=${1//$'\r'/}
+text=${text//$'\n'/ }
+
+if ! command -v powershell.exe > /dev/null; then
+    command -v notify-send > /dev/null || exit 0
+    # Текст уведомления по спецификации freedesktop — разметка: «Task<T>» сервер счёл бы тегом и вырезал. Замены —
+    # в кавычках: в bash 5.2 голый & в замене значит найденное.
+    text=${text//&/"&amp;"}
+    text=${text//</"&lt;"}
+    text=${text//>/"&gt;"}
+    # «--»: подсказка, начатая с «-», — текст, а не ключ.
+    exec notify-send --app-name=MeetingAssistant --expire-time=25000 -- MeetingAssistant "$text"
+fi
 
 # Текст — переменной окружения, а не в командной строке: кавычки подсказки не ломают команду PowerShell, кириллица
 # не проходит через кодовую страницу консоли. Из WSL в Windows-процесс переменная попадает, только если названа
 # в WSLENV.
-text=${1//$'\r'/}
-export MEETING_NOTIFY_TEXT=${text//$'\n'/ }
+export MEETING_NOTIFY_TEXT=$text
 export WSLENV="${WSLENV:+$WSLENV:}MEETING_NOTIFY_TEXT"
 # Git Bash переделывает похожие на путь значения переменных (/x → C:/Program Files/Git/x), когда запускает программу
 # Windows: подсказка «/api/… вернул 500» дошла бы искажённой. Переменные MEETING_* — как есть.

@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
-# Запуск записи встречи из сессии: meeting start в отдельном окне Windows, затем каталог новой встречи.
+# Запуск записи встречи из сессии: meeting start в отдельном окне (Windows — через powershell.exe, Linux —
+# linux-window), затем каталог новой встречи.
 #
 # Окно своё, а не фоновый процесс: в нём видны устройства и то, что запись идёт; остановка — Ctrl+C или закрытие
 # окна. Новая встреча узнаётся по current.json с другим id: прошлая встреча за новую не сойдёт, даже если запуск
 # не удался. Ждать — до MEETING_START_TIMEOUT секунд (умолчание 60: загрузка модели).
 #
-# Код 3 — приложение записи не установлено (нет корня встреч или meeting.exe): скилл предлагает meeting-install.
+# Код 3 — приложение записи не установлено (нет корня встреч, meeting или каталога моделей): скилл предлагает
+# meeting-install.
 # Код 4 — приложение старее плагина или его версию не распознать (check-app-version): скилл предлагает обновить его
 # тем же meeting-install.
 #
-# meeting.exe — по месту установки (install.ps1), а не из PATH, и каталог моделей перечитывается из реестра:
-# окружение WSL и уже открытых окон не видит того, что установка задала после их старта. Корень встреч окну
-# передаётся тот же, по которому скрипт ждёт новую встречу (meeting-dir --root), — иначе запись легла бы в один
-# корень, а ожидание шло бы в другом.
+# meeting — по месту установки (install.ps1, install.sh), а не из PATH, и каталог моделей перечитывается из реестра
+# или ~/.profile: окружение WSL, сессии и уже открытых окон не видит того, что установка задала после их старта.
+# Корень встреч окну передаётся тот же, по которому скрипт ждёт новую встречу (meeting-dir --root), — иначе запись
+# легла бы в один корень, а ожидание шло бы в другом.
 #
 # meeting-start <имя> [файл словаря]
 set -euo pipefail
@@ -22,25 +24,55 @@ fail() {
     exit 1
 }
 
+# Новая встреча — current.json с другим id; найдена — её каталог, и скрипт кончается.
+wait_new_meeting() {
+    local deadline=$((SECONDS + ${MEETING_START_TIMEOUT:-60})) id
+    while [ $SECONDS -lt $deadline ]; do
+        id=$(bash "$here/current-field" "$root/current.json" id 2>/dev/null || true)
+        if [ -n "$id" ] && [ "$id" != "$previous" ]; then
+            exec bash "$here/meeting-dir"
+        fi
+        sleep 0.5
+    done
+    fail "Новая встреча не началась за ${MEETING_START_TIMEOUT:-60} с: причина — в окне meeting (настройки, модель, устройства)."
+}
+
 [ $# -ge 1 ] && [ $# -le 2 ] || { echo "meeting-start <имя> [файл словаря]" >&2; exit 2; }
-[[ $1 != *[\"%]* && $1 != *\\ ]] ||
-    fail "Имя встречи — без двойных кавычек, % и \\ в конце: их разбирает командная строка Windows."
 
 here="$(cd "$(dirname "$0")" && pwd)"
-command -v powershell.exe > /dev/null || fail "Нет powershell.exe: запись запускается только под Windows (из WSL или Git Bash)."
+# Отказ platform (WSL без Windows, другая ОС) — выход с ним же: присваивание под set -e.
+os=$(bash "$here/platform")
+windows=
+[ "$os" = linux ] || windows=1
+if [ -n "$windows" ]; then
+    [[ $1 != *[\"%]* && $1 != *\\ ]] ||
+        fail "Имя встречи — без двойных кавычек, % и \\ в конце: их разбирает командная строка Windows."
+fi
 
 root=$(bash "$here/meeting-dir" --root)
 previous=$(bash "$here/current-field" "$root/current.json" id 2>/dev/null || true)
-window_root=$(bash "$here/windows-path" "$root")
 
 glossary=""
 if [ $# -eq 2 ]; then
     [ -f "$2" ] || fail "Нет файла словаря: $2"
-    glossary=$(bash "$here/windows-path" "$2")
+    glossary=$2
 fi
 
 # Отказ сверки версии (коды 1, 3, 4) — выход с ним же, до окна.
 bash "$here/check-app-version"
+
+if [ -z "$windows" ]; then
+    args=(start "$1")
+    # Окно открывается в своём каталоге: словарь — абсолютным путём.
+    [ -z "$glossary" ] || args+=(--glossary "$(cd "$(dirname "$glossary")" && pwd)/$(basename "$glossary")")
+    bash "$here/linux-window" "$root" "$(bash "$here/linux-setting" models)" "${args[@]}" && opened=0 || opened=$?
+    [ "$opened" -ne 3 ] || exit 3
+    [ "$opened" -eq 0 ] || fail "Окно записи не открылось."
+    wait_new_meeting
+fi
+
+window_root=$(bash "$here/windows-path" "$root")
+[ -z "$glossary" ] || glossary=$(bash "$here/windows-path" "$glossary")
 
 # Имя, словарь и корень — переменными окружения, а не в командной строке PowerShell: кавычки и кириллица не ломают
 # команду.
@@ -69,14 +101,4 @@ Start-Process -FilePath cmd.exe -ArgumentList "/c `"$command & pause`"" -Working
 # Код 3 — приложение записи не установлено: скилл по нему предлагает установку.
 [ "$opened" -ne 3 ] || exit 3
 [ "$opened" -eq 0 ] || fail "Окно записи не открылось."
-
-deadline=$((SECONDS + ${MEETING_START_TIMEOUT:-60}))
-while [ $SECONDS -lt $deadline ]; do
-    id=$(bash "$here/current-field" "$root/current.json" id 2>/dev/null || true)
-    if [ -n "$id" ] && [ "$id" != "$previous" ]; then
-        exec bash "$here/meeting-dir"
-    fi
-    sleep 0.5
-done
-
-fail "Новая встреча не началась за ${MEETING_START_TIMEOUT:-60} с: причина — в окне meeting (настройки, модель, устройства)."
+wait_new_meeting

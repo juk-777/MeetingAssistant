@@ -70,10 +70,17 @@
 
 ### Скилл на Linux — вторым pull request того же issue
 
-- Скрипты различают Windows (WSL и Git Bash) и Linux.
-- **Окно записи.** На Linux `meeting start` открывается в эмуляторе терминала: `x-terminal-emulator`, иначе
-  `gnome-terminal`. Остановка — Ctrl+C, как на Windows. Эмулятора нет — скрипт печатает команду для ручного
-  запуска.
+- Скрипты различают Windows (WSL и Git Bash) и Linux. WSL без `powershell.exe` — отказ, а не путь Linux: запись
+  там шла бы без системного звука Windows (решение владельца 15.11.2026).
+- **Окно записи.** На Linux `meeting start` открывается в эмуляторе терминала по списку: `xdg-terminal-exec`,
+  `ptyxis`, `x-terminal-emulator`, `gnome-terminal`, `konsole`, `xfce4-terminal`, `xterm`. Эмулятор, отказавший на
+  старте, пропускается. Остановка — Ctrl+C, как на Windows. Ни один не открыл окно — скрипт печатает команду для
+  ручного запуска.
+
+  Список меняли дважды 15.11.2026, решения владельца. В принятой спеке были только `x-terminal-emulator` и
+  `gnome-terminal`, а это лишь Debian, Ubuntu до 24.04 и GNOME. Затем ревью нашло, что в Ubuntu 26.04
+  `x-terminal-emulator` — Ptyxis без ключа `-e`, а `gnome-terminal` не стоит. Поэтому первым идёт
+  `xdg-terminal-exec` — терминал, выбранный в системе.
 - **Уведомление** — `notify-send`.
 - **Установка** — `install.sh`.
 - **Сверка версии** — `meeting --version`.

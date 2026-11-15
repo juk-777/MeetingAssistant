@@ -1,18 +1,33 @@
 #!/usr/bin/env bash
 # Ставит или обновляет приложение записи meeting из последнего релиза — скилл зовёт его по согласию пользователя.
 #
-# Качает install.ps1 релиза во временный каталог Windows и запускает его: сверку контрольных сумм, модели,
-# переменные пользователя и PATH делает он. Файлом, а не через «irm | iex»: скрипт читается так же, как из
-# репозитория (UTF-8 с BOM). Откуда брать релиз — MEETING_RELEASES: адрес релизов GitHub (по умолчанию — этого
-# репозитория) или каталог Windows с файлами релиза; install.ps1 получает его же.
+# В Windows (есть powershell.exe) качает install.ps1 релиза во временный каталог Windows и запускает его: сверку
+# контрольных сумм, модели, переменные пользователя и PATH делает он. Файлом, а не через «irm | iex»: скрипт читается
+# так же, как из репозитория (UTF-8 с BOM). На Linux так же — install.sh. Откуда брать релиз — MEETING_RELEASES:
+# адрес релизов GitHub (по умолчанию — этого репозитория) или каталог с файлами релиза (в Windows — путь Windows);
+# установщик получает его же.
 #
 # meeting-install
 set -euo pipefail
 
-command -v powershell.exe > /dev/null ||
-    { echo "Нет powershell.exe: приложение записи ставится только в Windows (из WSL или Git Bash)." >&2; exit 1; }
-
 export MEETING_RELEASES=${MEETING_RELEASES:-https://github.com/juk-777/MeetingAssistant/releases}
+
+here="$(cd "$(dirname "$0")" && pwd)"
+# Отказ platform (WSL без Windows, другая ОС) — выход с ним же: присваивание под set -e.
+os=$(bash "$here/platform")
+
+if [ "$os" = linux ]; then
+    script=$(mktemp)
+    trap 'rm -f "$script"' EXIT
+    if [[ $MEETING_RELEASES =~ ^https?:// ]]; then
+        curl -fsSL --retry 3 -o "$script" "$MEETING_RELEASES/latest/download/install.sh"
+    else
+        cp "$MEETING_RELEASES/install.sh" "$script"
+    fi
+    bash "$script" --release-base "$MEETING_RELEASES"
+    exit 0
+fi
+
 export WSLENV="${WSLENV:+$WSLENV:}MEETING_RELEASES"
 # Git Bash переделывает похожие на путь значения переменных, когда запускает программу Windows: адрес релизов —
 # как есть, как во всех скриптах скилла.
