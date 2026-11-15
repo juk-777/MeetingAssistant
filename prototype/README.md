@@ -55,6 +55,8 @@ uv venv -q -p 3.12 .venv && uv pip install -q -p .venv sherpa-onnx==2.0.1 numpy 
   `terms-reading.terms.txt` — эталонный список терминов по порядку (`docs/measurements.md`, «Английские термины»).
 - `channel_offset.py <audio.wav> [окно, с] [шаг, с]` — смещение каналов встречи по взаимной корреляции, когда
   микрофон слышит динамики (`docs/measurements.md`, «Смещение каналов»).
+- `pulse_pace.py <устройство> <пакетов> <app|server>` — темп записи с сервера звука Linux пакетами приложения
+  (`docs/measurements.md`, «Запись с сервера звука Linux»). Только стандартная библиотека и `libpulse0`.
 
 ## Прогон в реальном темпе с сессией Claude Code
 

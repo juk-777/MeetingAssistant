@@ -139,6 +139,7 @@ skip_reason() {
     if [[ $OSTYPE == msys* || $OSTYPE == cygwin* ]]; then
         case $1 in
             install_*) echo "install-skill.sh — путь разработчика в WSL; в Windows скилл из рабочей копии — claude --plugin-dir" ;;
+            linuxsetup_*) echo "install.sh — установка на Linux; в Windows — install.ps1" ;;
             *_WhenSkillLinked_*) echo "ссылка на скилл — путь разработчика в WSL (install-skill.sh); ln -s Git Bash копирует" ;;
             *) return 1 ;;
         esac
@@ -1041,44 +1042,202 @@ install_WhenLinkedElsewhere_RefusesAndKeepsLink() {
     [ "$(readlink -f "$config/skills/meeting")" = "$work/other-skill" ] || { echo "ссылка тронута"; return 1; }
 }
 
-# Скрипты выпуска и моделей репозитория — те же bash-тесты: отдельного набора ради двух скриптов нет.
+# Скрипты выпуска и моделей репозитория — те же bash-тесты: отдельного набора ради нескольких скриптов нет.
 # grep -P отказывает без локали UTF-8, а неинтерактивный Git Bash её не задаёт.
-models_WhenChecksumsListedTwice_TheyMatch() {
+models_WhenChecksumsListedInSeveralScripts_TheyMatch() {
     local -x LC_ALL=C.UTF-8
-    local name ps sh
+    local name ps sh linux
     for name in vad recognizer; do
         ps=$(grep -oP "^\\\$${name}Sha256 = '\K[0-9a-f]{64}" "$repo/scripts/install.ps1")
         sh=$(grep -oP "^${name}_sha256=\K[0-9a-f]{64}" "$repo/scripts/download-models.sh")
-        [ -n "$ps" ] && [ "$ps" = "$sh" ] || { echo "$name: install.ps1 '$ps', download-models.sh '$sh'"; return 1; }
+        linux=$(grep -oP "^${name}_sha256=\K[0-9a-f]{64}" "$repo/scripts/install.sh")
+        [ -n "$ps" ] && [ "$ps" = "$sh" ] && [ "$ps" = "$linux" ] ||
+            { echo "$name: install.ps1 '$ps', download-models.sh '$sh', install.sh '$linux'"; return 1; }
     done
+    ps=$(grep -oP "^\\\$whisperSha256 = '\K[0-9a-f]{64}" "$repo/scripts/install.ps1")
+    linux=$(grep -oP "^whisper_sha256=\K[0-9a-f]{64}" "$repo/scripts/install.sh")
+    [ -n "$ps" ] && [ "$ps" = "$linux" ] || { echo "whisper: install.ps1 '$ps', install.sh '$linux'"; return 1; }
 }
 
-models_WhenWhisperFileNamedInThreePlaces_NamesMatch() {
+models_WhenWhisperFileNamedInSeveralPlaces_NamesMatch() {
     local -x LC_ALL=C.UTF-8
-    local code ps refine
+    local code ps linux refine
     code=$(grep -oP 'WhisperFile = "\K[^"]+' "$repo/src/MeetingAssistant.Infrastructure/Speech/SpeechOptions.cs")
     ps=$(grep -oP "^\\\$whisperFile = '\K[^']+" "$repo/scripts/install.ps1")
+    linux=$(grep -oP '^whisper_file=\K\S+' "$repo/scripts/install.sh")
     refine=$(grep -oP '"\K[^"]+\.bin(?=")' "$repo/plugins/meeting/skills/meeting/scripts/meeting-refine")
-    [ -n "$code" ] && [ "$code" = "$ps" ] && [ "$code" = "$refine" ] ||
-        { echo "SpeechModels '$code', install.ps1 '$ps', meeting-refine '$refine'"; return 1; }
+    [ -n "$code" ] && [ "$code" = "$ps" ] && [ "$code" = "$linux" ] && [ "$code" = "$refine" ] ||
+        { echo "SpeechModels '$code', install.ps1 '$ps', install.sh '$linux', meeting-refine '$refine'"; return 1; }
 }
 
-# Приложение проверяет на старте те файлы модели, которые знает SpeechModels, а ставят их install.ps1 и
-# download-models.sh (CI берёт модели вторым): расхождение с install.ps1 тесты C# не видят.
-models_WhenRecognizerNamedInThreePlaces_NamesMatch() {
+# Приложение проверяет на старте те файлы модели, которые знает SpeechModels, а ставят их install.ps1, install.sh
+# и download-models.sh (CI берёт модели последним): расхождение со скриптами установки тесты C# не видят.
+models_WhenRecognizerNamedInSeveralPlaces_NamesMatch() {
     local -x LC_ALL=C.UTF-8
     local options="$repo/src/MeetingAssistant.Infrastructure/Speech/SpeechOptions.cs"
-    local code ps sh code_files ps_files sh_files
+    local code ps sh linux code_files ps_files sh_files linux_files
     code=$(grep -oP 'RecognizerDirectory = "\K[^"]+' "$options")
     ps=$(grep -oP "^\\\$recognizerDirectory = '\K[^']+" "$repo/scripts/install.ps1")
     sh=$(grep -oP '^recognizer=\K\S+' "$repo/scripts/download-models.sh")
+    linux=$(grep -oP '^recognizer=\K\S+' "$repo/scripts/install.sh")
     code_files=$(grep -oP 'Recognizer\w+File = "\K[^"]+' "$options" | sort | paste -sd' ')
     ps_files=$(grep '^\$modelFiles = ' "$repo/scripts/install.ps1" | grep -oP '\\\K[^"\\]+(?=")' | sort | paste -sd' ')
     sh_files=$(grep -oP '"\$recognizer/\K[^"]+' "$repo/scripts/download-models.sh" | sort -u | paste -sd' ')
-    [ -n "$code" ] && [ "$code" = "$ps" ] && [ "$code" = "$sh" ] ||
-        { echo "каталог: SpeechModels '$code', install.ps1 '$ps', download-models.sh '$sh'"; return 1; }
-    [ -n "$code_files" ] && [ "$code_files" = "$ps_files" ] && [ "$code_files" = "$sh_files" ] ||
-        { echo "файлы: SpeechModels '$code_files', install.ps1 '$ps_files', download-models.sh '$sh_files'"; return 1; }
+    linux_files=$(grep '^model_files=' "$repo/scripts/install.sh" | grep -oP '"\$recognizer/\K[^"]+' | sort | paste -sd' ')
+    [ -n "$code" ] && [ "$code" = "$ps" ] && [ "$code" = "$sh" ] && [ "$code" = "$linux" ] ||
+        { echo "каталог: SpeechModels '$code', install.ps1 '$ps', download-models.sh '$sh', install.sh '$linux'"; return 1; }
+    [ -n "$code_files" ] && [ "$code_files" = "$ps_files" ] && [ "$code_files" = "$sh_files" ] &&
+        [ "$code_files" = "$linux_files" ] ||
+        { echo "файлы: SpeechModels '$code_files', install.ps1 '$ps_files', download-models.sh '$sh_files'," \
+            "install.sh '$linux_files'"; return 1; }
+}
+
+# install.sh — на подменённом домашнем каталоге и релизе в каталоге. Модели уже стоят: установка их не качает.
+linuxsetup_home() {
+    home=$(mktemp -d "$work/home.XXXX")
+    local -x LC_ALL=C.UTF-8
+    local models="$home/.local/share/meeting-assistant/models" recognizer
+    recognizer=$(grep -oP '^recognizer=\K\S+' "$repo/scripts/install.sh")
+    mkdir -p "$models/$recognizer"
+    touch "$models/silero_vad.onnx" "$models/$recognizer/model.int8.onnx" "$models/$recognizer/tokens.txt" \
+        "$models/$(grep -oP '^whisper_file=\K\S+' "$repo/scripts/install.sh")"
+}
+
+# linuxsetup_release <версия>: архив с заглушкой meeting, которая печатает версию, и его сумма.
+linuxsetup_release() {
+    local stage="$work/release-stage"
+    rm -rf "$stage" "$work/release" && mkdir -p "$stage" "$work/release"
+    printf '#!/usr/bin/env bash\necho %s\n' "$1" > "$stage/meeting"
+    chmod +x "$stage/meeting"
+    tar -czf "$work/release/meeting-linux-x64.tar.gz" -C "$stage" .
+    (cd "$work/release" && sha256sum meeting-linux-x64.tar.gz > meeting-linux-x64.tar.gz.sha256)
+}
+
+linuxsetup_run() {
+    env -u XDG_DATA_HOME -u Storage__MeetingsRoot HOME="$home" \
+        bash "$repo/scripts/install.sh" --release-base "$work/release" "$@" > "$work/setup.log" 2>&1
+}
+
+# linuxsetup_profile <переменная>: значение после входа в систему — ~/.profile, прочитанный чистой оболочкой.
+linuxsetup_profile() {
+    env -i HOME="$home" PATH=/usr/bin:/bin bash -c '. "$HOME/.profile"; printf "%s" "${!1}"' _ "$1"
+}
+
+linuxsetup_WhenReleaseInDirectory_InstallsAppLinkAndProfileVariables() {
+    linuxsetup_home
+    linuxsetup_release 1.0.0
+    printf 'строка пользователя\n' > "$home/.profile"
+    linuxsetup_run || { cat "$work/setup.log"; return 1; }
+    [ "$(env -i HOME="$home" PATH="$(linuxsetup_profile PATH)" bash -c 'meeting --version')" = 1.0.0 ] ||
+        { echo "meeting по PATH из ~/.profile не отвечает версией"; return 1; }
+    [ "$(linuxsetup_profile Storage__MeetingsRoot)" = "$home/Meetings" ] && [ -d "$home/Meetings" ] ||
+        { echo "корень встреч: '$(linuxsetup_profile Storage__MeetingsRoot)'"; return 1; }
+    [ "$(linuxsetup_profile Speech__ModelsDirectory)" = "$home/.local/share/meeting-assistant/models" ] ||
+        { echo "модели: '$(linuxsetup_profile Speech__ModelsDirectory)'"; return 1; }
+    [ "$(head -1 "$home/.profile")" = 'строка пользователя' ] || { echo "строка пользователя потеряна"; return 1; }
+}
+
+linuxsetup_WhenRepeatedWithNewRelease_ReplacesAppKeepsRootAndOneBlock() {
+    linuxsetup_home
+    linuxsetup_release 1.0.0
+    linuxsetup_run --meetings-root "$work/встречи с пробелом" || { cat "$work/setup.log"; return 1; }
+    linuxsetup_release 2.0.0
+    linuxsetup_run || { cat "$work/setup.log"; return 1; }
+    [ "$("$home/.local/bin/meeting" --version)" = 2.0.0 ] || { echo "app не заменён"; return 1; }
+    [ "$(linuxsetup_profile Storage__MeetingsRoot)" = "$work/встречи с пробелом" ] ||
+        { echo "корень встреч: '$(linuxsetup_profile Storage__MeetingsRoot)'"; return 1; }
+    [ "$(grep -c '^# >>> meeting-assistant >>>$' "$home/.profile")" = 1 ] || { cat "$home/.profile"; return 1; }
+}
+
+linuxsetup_WhenArchiveChecksumWrong_RefusesAndKeepsInstalledApp() {
+    linuxsetup_home
+    linuxsetup_release 1.0.0
+    linuxsetup_run || { cat "$work/setup.log"; return 1; }
+    linuxsetup_release 2.0.0
+    printf '%064d  meeting-linux-x64.tar.gz\n' 0 > "$work/release/meeting-linux-x64.tar.gz.sha256"
+    if linuxsetup_run; then
+        echo "отказа нет"
+        return 1
+    fi
+    grep -q 'Контрольная сумма' "$work/setup.log" || { cat "$work/setup.log"; return 1; }
+    [ "$("$home/.local/bin/meeting" --version)" = 1.0.0 ] || { echo "установленный app тронут"; return 1; }
+}
+
+linuxsetup_WhenForeignFileHoldsLinkName_RefusesAndKeepsIt() {
+    linuxsetup_home
+    linuxsetup_release 1.0.0
+    mkdir -p "$home/.local/bin"
+    printf 'чужой\n' > "$home/.local/bin/meeting"
+    if linuxsetup_run; then
+        echo "отказа нет"
+        return 1
+    fi
+    [ "$(cat "$home/.local/bin/meeting")" = 'чужой' ] || { echo "чужой файл тронут"; return 1; }
+}
+
+linuxsetup_WhenForeignLinkHoldsLinkName_RefusesAndKeepsIt() {
+    linuxsetup_home
+    linuxsetup_release 1.0.0
+    mkdir -p "$home/.local/bin"
+    ln -s "$work/своя-сборка" "$home/.local/bin/meeting"
+    if linuxsetup_run; then
+        echo "отказа нет"
+        return 1
+    fi
+    [ "$(readlink "$home/.local/bin/meeting")" = "$work/своя-сборка" ] || { echo "чужая ссылка тронута"; return 1; }
+    [ ! -e "$home/.local/share/meeting-assistant/app" ] || { echo "app поставлен до отказа"; return 1; }
+}
+
+linuxsetup_WhenProfileBlockHasNoEnd_RefusesAndKeepsProfile() {
+    linuxsetup_home
+    linuxsetup_release 1.0.0
+    printf 'до\n# >>> meeting-assistant >>>\nexport X=1\nстрока пользователя\n' > "$home/.profile"
+    cp "$home/.profile" "$work/profile.before"
+    if linuxsetup_run; then
+        echo "отказа нет"
+        return 1
+    fi
+    cmp -s "$home/.profile" "$work/profile.before" || { echo "~/.profile тронут"; return 1; }
+}
+
+# Корень с кириллицей и кавычкой, установка в локали C: значение читает и sh (dash), не только bash.
+linuxsetup_WhenRootNotAsciiInCLocale_ShReadsIt() {
+    linuxsetup_home
+    linuxsetup_release 1.0.0
+    local root="$work/встречи 'и кавычка'" got
+    LC_ALL=C linuxsetup_run --meetings-root "$root" || { cat "$work/setup.log"; return 1; }
+    got=$(env -i HOME="$home" sh -c '. "$HOME/.profile"; printf "%s" "$Storage__MeetingsRoot"')
+    [ "$got" = "$root" ] || { echo "sh прочёл: '$got'"; return 1; }
+}
+
+# Модели не стоят и качаются из каталога-подмены: файл с неверной суммой не ставится, app не тронут.
+linuxsetup_WhenModelChecksumWrong_RefusesBeforeApp() {
+    home=$(mktemp -d "$work/home.XXXX")
+    linuxsetup_release 1.0.0
+    mkdir -p "$work/model-release"
+    printf 'не модель\n' > "$work/model-release/silero_vad.onnx"
+    if MEETING_MODEL_RELEASE="$work/model-release" linuxsetup_run; then
+        echo "отказа нет"
+        return 1
+    fi
+    grep -q 'Контрольная сумма silero_vad.onnx' "$work/setup.log" || { cat "$work/setup.log"; return 1; }
+    [ ! -e "$home/.local/share/meeting-assistant/app" ] || { echo "app поставлен"; return 1; }
+}
+
+linuxsetup_WhenWhisperChecksumWrong_RefusesAndDoesNotPlaceIt() {
+    linuxsetup_home
+    linuxsetup_release 1.0.0
+    local whisper
+    whisper=$(grep -oP '^whisper_file=\K\S+' "$repo/scripts/install.sh")
+    rm "$home/.local/share/meeting-assistant/models/$whisper"
+    mkdir -p "$work/whisper-source"
+    printf 'не модель\n' > "$work/whisper-source/$whisper"
+    if MEETING_WHISPER_SOURCE="$work/whisper-source" linuxsetup_run; then
+        echo "отказа нет"
+        return 1
+    fi
+    grep -q "Контрольная сумма $whisper" "$work/setup.log" || { cat "$work/setup.log"; return 1; }
+    [ ! -e "$home/.local/share/meeting-assistant/models/$whisper" ] || { echo "Whisper поставлен"; return 1; }
 }
 
 release_WhenPluginVersionMatchesTag_PrintsVersion() {

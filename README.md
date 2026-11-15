@@ -5,8 +5,8 @@ sherpa-onnx), транскрипт в файл, подсказки рабоче�
 
 Две части:
 - **приложение записи `meeting`** — пишет микрофон («Я») и системный звук («Собеседники»), распознаёт речь
-  и дописывает транскрипт в каталог встречи. Пока только Windows: звук захватывается через WASAPI; Linux —
-  [#16](https://github.com/juk-777/MeetingAssistant/issues/16);
+  и дописывает транскрипт в каталог встречи. Windows (WASAPI) и Linux (PulseAudio или PipeWire); на Linux скилл
+  пока не открывает окно записи сам — [#16](https://github.com/juk-777/MeetingAssistant/issues/16);
 - **скилл `/meeting` для Claude Code** — сессия Claude Code запускает запись, просыпается по событиям
   и подсказывает: по проекту — из его кода и доков, по остальному — из знаний модели; после встречи пишет протокол, по команде — сверив
   с транскриптом Whisper.
@@ -18,6 +18,8 @@ sherpa-onnx), транскрипт в файл, подсказки рабоче�
 ## Установка
 
 ### Приложение записи
+
+#### Windows
 
 PowerShell:
 
@@ -38,6 +40,24 @@ powershell.exe -c 'iwr https://github.com/juk-777/MeetingAssistant/releases/late
 переменные пользователя `Storage__MeetingsRoot` (корень встреч, по умолчанию `%USERPROFILE%\Meetings`; другой —
 `-MeetingsRoot <каталог>`) и `Speech__ModelsDirectory`, добавляет `meeting` в `PATH` — виден в новом окне
 терминала. Конкретная версия — `-Version v0.1.0`; установленная — `meeting --version`.
+
+#### Ubuntu
+
+Linux x86-64 с PulseAudio или PipeWire (в Ubuntu с рабочим столом — по умолчанию). Нужны `curl` и `libpulse0`:
+
+```bash
+curl -fsSL https://github.com/juk-777/MeetingAssistant/releases/latest/download/install.sh | bash
+```
+
+Скрипт ставит то же, что в Windows, в `~/.local/share/meeting-assistant` и сверяет контрольные суммы. Ссылку
+`meeting` кладёт в `~/.local/bin`. В `~/.profile` дописывает `Storage__MeetingsRoot`, `Speech__ModelsDirectory` и
+`~/.local/bin` в `PATH`: они действуют со следующего входа в систему, сейчас — `source ~/.profile`. Корень встреч
+по умолчанию — `~/Meetings`, другой — `| bash -s -- --meetings-root <каталог>`. Конкретная версия —
+`--version v0.1.0`.
+
+Запись — `meeting start "<имя>"` в терминале, остановка — Ctrl+C. Микрофон по умолчанию пишется в «Я», монитор
+устройства вывода по умолчанию — в «Собеседники». Скилл на Linux пока не открывает окно записи и не ставит
+приложение сам.
 
 ### Скилл `/meeting`
 
@@ -72,8 +92,15 @@ git clone https://github.com/juk-777/MeetingAssistant.git; cd MeetingAssistant
 powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -FromSource
 ```
 
-Обе сборки из исходников ставят модели так же, как установка из релиза; `-FromSource` берёт их из `models/`
-репозитория, если они там есть. Ссылка `install-skill.sh` вместо плагина: правка скилла в рабочей копии видна
+На Linux — нужны .NET SDK 10 (в `PATH` или в `~/.dotnet`), git и curl:
+
+```bash
+git clone https://github.com/juk-777/MeetingAssistant.git && cd MeetingAssistant
+./scripts/install.sh --from-source
+```
+
+Сборки из исходников ставят модели так же, как установка из релиза; `-FromSource` и `--from-source` берут их из
+`models/` репозитория, если они там есть. Ссылка `install-skill.sh` вместо плагина: правка скилла в рабочей копии видна
 сразу. В Claude Code для Windows скилл из рабочей копии — `claude --plugin-dir plugins/meeting`. Порядок
 разработки — `docs/development.md`.
 
@@ -180,15 +207,17 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -FromSource
 Выпуск меняет обе части — и приложение записи, и скилл: обновлять их вместе. Скилл, который новее приложения,
 перед записью и уточнением скажет об этом сам и предложит обновить приложение.
 
-- Приложение записи — та же команда установки (из исходников — `install-wsl.sh` или `install.ps1 -FromSource`):
-  программа заменяется, корень встреч и модели остаются, недостающие модели (Whisper у установки до уточнения
-  встречи) докачиваются. Во время встречи — отказ.
+- Приложение записи — та же команда установки (из исходников — `install-wsl.sh`, `install.ps1 -FromSource` или
+  `install.sh --from-source`): программа заменяется, корень встреч и модели остаются, недостающие модели (Whisper
+  у установки до уточнения встречи) докачиваются. В Windows во время встречи — отказ; на Linux идущая запись
+  дорабатывает на прежней версии.
 - Скилл — в терминале
   `claude plugin marketplace update meeting-assistant && claude plugin update meeting@meeting-assistant`,
   затем перезапуск сессии Claude Code.
 - Удаление: `/plugin uninstall meeting@meeting-assistant` (или ссылка `~/.claude/skills/meeting`), каталог
   `%LOCALAPPDATA%\MeetingAssistant`, переменные пользователя `Storage__MeetingsRoot` и `Speech__ModelsDirectory`,
-  строка `…\MeetingAssistant\app` в `PATH` пользователя.
+  строка `…\MeetingAssistant\app` в `PATH` пользователя. На Linux — каталог `~/.local/share/meeting-assistant`,
+  ссылка `~/.local/bin/meeting` и блок `meeting-assistant` в `~/.profile`.
 
 ## Документы
 

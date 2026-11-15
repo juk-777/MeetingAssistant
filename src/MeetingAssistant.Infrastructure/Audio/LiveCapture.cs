@@ -14,8 +14,8 @@ namespace MeetingAssistant.Infrastructure.Audio;
 public interface ILiveCapture
 {
     /// <summary>
-    /// Открывает устройства по умолчанию. Отказ — до начала встречи: корень встреч не абсолютный, не Windows,
-    /// нет устройства, формат устройства не принят.
+    /// Открывает устройства по умолчанию. Отказ — до начала встречи: корень встреч не абсолютный, ОС не Windows и не
+    /// Linux, нет устройства или клиента сервера звука, формат устройства не принят.
     /// </summary>
     Result<OpenedCapture> Open();
 
@@ -39,11 +39,12 @@ public interface ILiveCapture
 public sealed record OpenedCapture(IAudioSource Source, string Microphone, string SystemSound);
 
 /// <summary>
-/// Захват через WASAPI на устройствах Windows по умолчанию.
+/// Захват на устройствах по умолчанию: в Windows — WASAPI, в Linux — сервер звука через <c>libpulse-simple</c>.
 /// </summary>
 internal sealed class LiveCapture(
     IOptions<StorageOptions> storageOptions,
     MeetingDirectory meetingDirectory,
+    IPulseSimple pulse,
     TimeProvider timeProvider) : ILiveCapture
 {
     public const string AudioFileName = "audio.wav";
@@ -58,8 +59,13 @@ internal sealed class LiveCapture(
             return Result.Failure<OpenedCapture>(StorageErrors.MeetingsRootNotAbsolute(root));
         }
 
-        return OperatingSystem.IsWindows()
-            ? OpenDefaultDevices()
+        if (OperatingSystem.IsWindows())
+        {
+            return OpenDefaultDevices();
+        }
+
+        return OperatingSystem.IsLinux()
+            ? OpenSoundServer()
             : Result.Failure<OpenedCapture>(AudioErrors.CaptureUnsupported);
     }
 
@@ -95,5 +101,39 @@ internal sealed class LiveCapture(
         }
 
         return Result.Success(new OpenedCapture(source.Value, me.DeviceName, others.DeviceName));
+    }
+
+    private Result<OpenedCapture> OpenSoundServer()
+    {
+        if (!pulse.Load())
+        {
+            return Result.Failure<OpenedCapture>(AudioErrors.NoSoundLibrary);
+        }
+
+        Result<PulseDeviceStream> me = PulseDeviceStream.Open(Channel.Me, pulse, timeProvider);
+
+        if (me.IsFailure)
+        {
+            return Result.Failure<OpenedCapture>(me.Error);
+        }
+
+        Result<PulseDeviceStream> others = PulseDeviceStream.Open(Channel.Others, pulse, timeProvider);
+
+        if (others.IsFailure)
+        {
+            me.Value.Dispose();
+            return Result.Failure<OpenedCapture>(others.Error);
+        }
+
+        Result<LiveAudioSource> source = LiveAudioSource.Open([me.Value, others.Value], timeProvider);
+
+        if (source.IsFailure)
+        {
+            me.Value.Dispose();
+            others.Value.Dispose();
+            return Result.Failure<OpenedCapture>(source.Error);
+        }
+
+        return Result.Success(new OpenedCapture(source.Value, me.Value.DeviceName, others.Value.DeviceName));
     }
 }
