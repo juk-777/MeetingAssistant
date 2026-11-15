@@ -50,8 +50,9 @@ public static partial class WakePolicy
         return reasons;
     }
 
-    // Одно слово, которое распознавание пишет верно: «клод» GigaAM не выдаёт (docs/decisions.md).
-    [GeneratedRegex(@"\bагент\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    // «Агент» в падежах единственного числа: «клод» GigaAM не выдаёт, а множественное число и производные
+    // («агентство») звучат в деловой речи (docs/decisions.md).
+    [GeneratedRegex(@"\bагент(?:а|у|ом|е)?\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex AddressWord();
 
     [GeneratedRegex(@"[\p{L}\p{N}]+")]
