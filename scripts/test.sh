@@ -47,6 +47,8 @@ for app in $apps; do
         echo "--  $(basename "$app") — нет тестов под фильтр"
     elif [ $code -ne 0 ]; then
         failed=1
+        # Имя и код — до вывода: упавшее нативно приложение своего вывода почти не оставляет.
+        echo "FAIL  $(basename "$app") — код $code"
         printf '%s\n' "$output"
     else
         echo "ok  $(basename "$app") — ${count:-0}"
@@ -62,6 +64,9 @@ if [ $# -eq 0 ]; then
 
     if [ $code -ne 0 ] || [ -z "$count" ]; then
         failed=1
+        reason="код $code"
+        [ -n "$count" ] || reason="$reason, нет строки «итого»"
+        echo "FAIL  скилл /meeting — $reason"
         printf '%s\n' "$output"
     else
         echo "ok  скилл /meeting — $count"
