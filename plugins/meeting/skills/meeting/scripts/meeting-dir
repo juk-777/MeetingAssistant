@@ -44,6 +44,8 @@ meetings_root() {
     local root=${MEETINGS_ROOT:-}
     [ -n "$root" ] || root=$(windows_root)
     if [ -z "$root" ] && ! command -v powershell.exe > /dev/null; then
+        # Отказ platform (WSL без Windows, другая ОС) — выход явно: функцию зовут и из $(…), где set -e не действует.
+        bash "$here/platform" > /dev/null || exit 1
         root=$(bash "$here/linux-setting" root)
     fi
     if [ -z "$root" ]; then

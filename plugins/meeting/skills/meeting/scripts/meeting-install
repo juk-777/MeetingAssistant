@@ -12,9 +12,11 @@ set -euo pipefail
 
 export MEETING_RELEASES=${MEETING_RELEASES:-https://github.com/juk-777/MeetingAssistant/releases}
 
-if ! command -v powershell.exe > /dev/null; then
-    [ "$(uname -s)" = Linux ] ||
-        { echo "Приложение записи ставится в Windows (из WSL или Git Bash) и на Linux." >&2; exit 1; }
+here="$(cd "$(dirname "$0")" && pwd)"
+# Отказ platform (WSL без Windows, другая ОС) — выход с ним же: присваивание под set -e.
+os=$(bash "$here/platform")
+
+if [ "$os" = linux ]; then
     script=$(mktemp)
     trap 'rm -f "$script"' EXIT
     if [[ $MEETING_RELEASES =~ ^https?:// ]]; then

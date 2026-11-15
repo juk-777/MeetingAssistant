@@ -20,6 +20,11 @@ text=${text//$'\n'/ }
 
 if ! command -v powershell.exe > /dev/null; then
     command -v notify-send > /dev/null || exit 0
+    # Текст уведомления по спецификации freedesktop — разметка: «Task<T>» сервер счёл бы тегом и вырезал. Замены —
+    # в кавычках: в bash 5.2 голый & в замене значит найденное.
+    text=${text//&/"&amp;"}
+    text=${text//</"&lt;"}
+    text=${text//>/"&gt;"}
     # «--»: подсказка, начатая с «-», — текст, а не ключ.
     exec notify-send --app-name=MeetingAssistant --expire-time=25000 -- MeetingAssistant "$text"
 fi

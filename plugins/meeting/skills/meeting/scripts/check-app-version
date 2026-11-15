@@ -5,8 +5,8 @@
 # правилам. Версии — X.Y.Z, сравниваются покомпонентно числами. Сборка разработчика (-dev в конце) не сверяется.
 #
 # Код 4 — приложение старее плагина или его версию не распознать: скилл предлагает meeting-install.
-# Код 3 — приложение записи не установлено. Код 1 — версию не узнать (ОС не Windows и не Linux, meeting --version
-# упал). Спрашивается установленное: в Windows — через powershell.exe, на Linux — по месту установки install.sh.
+# Код 3 — приложение записи не установлено. Код 1 — версию не узнать (отказ platform, meeting --version упал).
+# Спрашивается установленное: в Windows — через powershell.exe, на Linux — по месту установки install.sh.
 # Без сверки: MEETING_ANY_APP_VERSION=1 (человек решил записывать на том, что стоит, или новее релиза нет), скилл
 # вне плагина (нет plugin.json — сравнивать не с чем) и версия плагина не X.Y.Z (предрелиз).
 #
@@ -24,20 +24,18 @@ plugin=$(bash "$here/current-field" "$here/../../../.claude-plugin/plugin.json" 
 [[ $plugin =~ $version_pattern ]] || exit 0
 plugin_parts=("${BASH_REMATCH[@]:1}")
 
-if command -v powershell.exe > /dev/null; then
+os=$(bash "$here/platform")
+if [ "$os" = windows ]; then
     app=$(powershell.exe -NoProfile -NonInteractive -Command '
 $meeting = Join-Path $env:LOCALAPPDATA "MeetingAssistant\app\meeting.exe"
 if (-not (Test-Path $meeting)) { [Console]::Error.WriteLine("Приложение записи не установлено: нет $meeting. Поставить — meeting-install."); exit 3 }
 & $meeting --version
 exit $LASTEXITCODE
 ') && asked=0 || asked=$?
-elif [ "$(uname -s)" = Linux ]; then
+else
     meeting=$(bash "$here/linux-setting" app)
     [ -x "$meeting" ] || { echo "Приложение записи не установлено: нет $meeting. Поставить — meeting-install." >&2; exit 3; }
     app=$("$meeting" --version) && asked=0 || asked=$?
-else
-    echo "Приложение записи работает в Windows (из WSL или Git Bash) и на Linux." >&2
-    exit 1
 fi
 [ "$asked" -ne 3 ] || exit 3
 [ "$asked" -eq 0 ] || { echo "Версию приложения записи не узнать: meeting --version вышел с кодом $asked." >&2; exit 1; }

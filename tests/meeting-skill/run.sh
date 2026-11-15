@@ -1269,7 +1269,7 @@ linux_skill() {
     [[ $script == */* ]] || script="$bin/$script"
     linux_bin
     mkdir -p "$stubs"
-    env -u XDG_DATA_HOME -u Storage__MeetingsRoot -u Speech__ModelsDirectory -u MEETINGS_ROOT \
+    env -u XDG_DATA_HOME -u Storage__MeetingsRoot -u Speech__ModelsDirectory -u MEETINGS_ROOT -u WSL_DISTRO_NAME \
         HOME="$home" PATH="$stubs:$work/linux-bin" bash "$script" "$@"
 }
 
@@ -1289,13 +1289,16 @@ EOF
     linuxsetup_run --meetings-root "$work/linux-root" || { cat "$work/setup.log"; return 1; }
 }
 
-# stub_terminal <каталог> <эмулятор> <ключ>: принимает команду после своего ключа и исполняет её, как окно.
+# stub_terminal <каталог> <эмулятор> [ключ]: принимает команду после своего ключа (без ключа — сразу) и исполняет
+# её, как окно. Чужой ключ — отказ на старте, как у настоящего эмулятора.
 stub_terminal() {
     mkdir -p "$1"
     cat > "$1/$2" <<EOF
 #!/usr/bin/env bash
-[ "\$1" = '$3' ] || { echo "ключ \$1 вместо $3" >&2; exit 9; }
-shift
+if [ -n '${3:-}' ]; then
+    [ "\$1" = '${3:-}' ] || { echo "ключ \$1 вместо ${3:-}" >&2; exit 9; }
+    shift
+fi
 echo '$2' > "$work/terminal.used"
 "\$@"
 EOF
@@ -1317,7 +1320,7 @@ linuxdir_WhenProfileHasNoBlock_TakesEnvironment() {
     home=$(mktemp -d "$work/home.XXXX")
     linux_bin
     local got
-    got=$(env -u MEETINGS_ROOT HOME="$home" PATH="$work/linux-bin" Storage__MeetingsRoot="$work/env-root" \
+    got=$(env -u MEETINGS_ROOT -u WSL_DISTRO_NAME HOME="$home" PATH="$work/linux-bin" Storage__MeetingsRoot="$work/env-root" \
         bash "$bin/meeting-dir" --root) || return 1
     [ "$got" = "$work/env-root" ] || { echo "корень: $got"; return 1; }
 }
@@ -1348,13 +1351,18 @@ linuxstart_WhenNewMeetingAppears_PassesNameAsIsAndPrintsIt() {
 linuxstart_WhenOnlyOneTerminal_OpensItWithItsKey() {
     linux_installed || return 1
     local pair terminal number=0
-    for pair in 'x-terminal-emulator -e' 'gnome-terminal --' 'konsole -e' 'xfce4-terminal -x' 'xterm -e'; do
-        terminal=${pair% *}
+    for pair in 'xdg-terminal-exec' 'ptyxis --' 'x-terminal-emulator -e' 'gnome-terminal --' 'konsole -e' \
+        'xfce4-terminal -x' 'xterm -e'; do
+        terminal=${pair%% *}
         number=$((number + 1))
         new_meeting
         current_json "$work/start.next" "new$number" "$meeting"
         rm -rf "$work/stub-term" "$work/terminal.used"
-        stub_terminal "$work/stub-term" "$terminal" "${pair#* }"
+        if [ "$terminal" = "$pair" ]; then
+            stub_terminal "$work/stub-term" "$terminal"
+        else
+            stub_terminal "$work/stub-term" "$terminal" "${pair#* }"
+        fi
         MEETING_START_TIMEOUT=5 linux_skill "$work/stub-term" meeting-start 'x' > /dev/null 2> "$work/start.err" ||
             { echo "$terminal:"; cat "$work/start.err"; return 1; }
         [ "$(cat "$work/terminal.used")" = "$terminal" ] || { echo "$terminal: открыт $(cat "$work/terminal.used")"; return 1; }
@@ -1367,8 +1375,62 @@ linuxstart_WhenSeveralTerminals_TakesSystemChoiceFirst() {
     current_json "$work/start.next" new "$meeting"
     stub_terminal "$work/stub-term" gnome-terminal --
     stub_terminal "$work/stub-term" x-terminal-emulator -e
+    stub_terminal "$work/stub-term" xdg-terminal-exec
     MEETING_START_TIMEOUT=5 linux_skill "$work/stub-term" meeting-start 'x' > /dev/null || return 1
-    [ "$(cat "$work/terminal.used")" = x-terminal-emulator ] || { cat "$work/terminal.used"; return 1; }
+    [ "$(cat "$work/terminal.used")" = xdg-terminal-exec ] || { cat "$work/terminal.used"; return 1; }
+}
+
+# Поставщик x-terminal-emulator без ключа -e (Ptyxis в Ubuntu 26.04) отказывает на старте: окно открывает следующий.
+linuxstart_WhenTerminalRefusesItsKey_OpensNextOne() {
+    linux_installed || return 1
+    new_meeting
+    current_json "$work/start.next" new "$meeting"
+    stub_terminal "$work/stub-term" x-terminal-emulator --
+    stub_terminal "$work/stub-term" xterm -e
+    MEETING_START_TIMEOUT=5 linux_skill "$work/stub-term" meeting-start 'x' > /dev/null 2> "$work/start.err" ||
+        { cat "$work/start.err"; return 1; }
+    [ "$(cat "$work/terminal.used")" = xterm ] || { cat "$work/terminal.used"; return 1; }
+}
+
+# xterm и konsole живут, пока открыто окно: вызов из сессии не ждёт конца встречи.
+linuxstart_WhenTerminalLivesWithWindow_ReturnsWithoutWaitingForIt() {
+    linux_installed || return 1
+    new_meeting
+    current_json "$work/start.next" new "$meeting"
+    mkdir -p "$work/stub-term"
+    printf '#!/usr/bin/env bash\nshift\n"$@"\nsleep 15\n' > "$work/stub-term/xterm"
+    chmod +x "$work/stub-term/xterm"
+    local started=$SECONDS got
+    got=$(MEETING_START_TIMEOUT=5 linux_skill "$work/stub-term" meeting-start 'x') || return 1
+    [ $((SECONDS - started)) -lt 10 ] || { echo "ждал эмулятор $((SECONDS - started)) с"; return 1; }
+    [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
+}
+
+linuxstart_WhenModelsNotSet_ExitsAsNotInstalledWithoutWindow() {
+    linux_installed || return 1
+    sed -i '/^export Speech__ModelsDirectory=/d' "$home/.profile"
+    stub_terminal "$work/stub-term" xterm -e
+    local code=0
+    MEETING_START_TIMEOUT=2 linux_skill "$work/stub-term" meeting-start 'x' > /dev/null 2>&1 || code=$?
+    [ "$code" -eq 3 ] || { echo "код: $code"; return 1; }
+    [ ! -f "$work/terminal.used" ] || { echo "окно открыто"; return 1; }
+}
+
+# WSL без powershell.exe (interop выключен) — не Linux: запись там шла бы без системного звука Windows.
+linuxwsl_WhenNoPowershell_RefusesInsteadOfLinuxPath() {
+    linux_installed || return 1
+    linux_bin
+    stub_terminal "$work/stub-term" xterm -e
+    local script code
+    for script in meeting-start meeting-install meeting-dir; do
+        code=0
+        env -u MEETINGS_ROOT -u Storage__MeetingsRoot WSL_DISTRO_NAME=Ubuntu HOME="$home" \
+            PATH="$work/stub-term:$work/linux-bin" MEETING_START_TIMEOUT=2 bash "$bin/$script" \
+            $([ "$script" != meeting-start ] || echo x) > /dev/null 2> "$work/wsl.err" || code=$?
+        [ "$code" -eq 1 ] && grep -q 'WSL без powershell.exe' "$work/wsl.err" ||
+            { echo "$script: код $code"; cat "$work/wsl.err"; return 1; }
+    done
+    [ ! -f "$work/terminal.used" ] || { echo "окно открыто"; return 1; }
 }
 
 linuxstart_WhenNoTerminal_RefusesWithCommandToRun() {
@@ -1413,6 +1475,8 @@ linuxrefine_WhenMeetingFinished_OpensWindowForItAndPrintsIt() {
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
     [ "$(cat "$work/linux-meeting.args")" = "$(printf '%s\n' refine "$meeting")" ] ||
         { cat "$work/linux-meeting.args"; return 1; }
+    [ "$(cat "$work/linux-meeting.env")" = "$(printf '%s\n' "$work/linux-root" "$home/.local/share/meeting-assistant/models")" ] ||
+        { cat "$work/linux-meeting.env"; return 1; }
 }
 
 linuxrefine_WhenWhisperMissing_ExitsAsNotInstalledWithoutWindow() {
@@ -1464,9 +1528,9 @@ linuxnotify_WhenNotifySendPresent_PassesTitleAndJoinedText() {
     mkdir -p "$work/stub-notify"
     printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s/notify.args"\n' "$work" > "$work/stub-notify/notify-send"
     chmod +x "$work/stub-notify/notify-send"
-    linux_skill "$work/stub-notify" meeting-notify $'-первая\nвторая' || return 1
-    [ "$(tail -3 "$work/notify.args")" = "$(printf '%s\n' -- MeetingAssistant '-первая вторая')" ] ||
-        { cat "$work/notify.args"; return 1; }
+    linux_skill "$work/stub-notify" meeting-notify $'-первая\nTask<T> & b' || return 1
+    [ "$(cat "$work/notify.args")" = "$(printf '%s\n' --app-name=MeetingAssistant --expire-time=25000 -- MeetingAssistant \
+        '-первая Task&lt;T&gt; &amp; b')" ] || { cat "$work/notify.args"; return 1; }
 }
 
 linuxnotify_WhenNoNotifySend_ExitsQuietly() {

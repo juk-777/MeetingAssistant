@@ -182,7 +182,7 @@ if [ -n "$download" ]; then
     if command -v bzip2 > /dev/null; then
         tar -xjf "$downloads/$recognizer.tar.bz2" -C "$unpacked"
     else
-        command -v python3 > /dev/null || fail "Нет ни bzip2, ни python3 для распаковки модели: sudo apt install bzip2."
+        command -v python3 > /dev/null || fail "Нет ни bzip2, ни python3 для распаковки модели: поставьте пакет bzip2."
         python3 -c 'import sys, tarfile; tarfile.open(sys.argv[1]).extractall(sys.argv[2])' \
             "$downloads/$recognizer.tar.bz2" "$unpacked"
     fi

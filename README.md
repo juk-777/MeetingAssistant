@@ -72,8 +72,9 @@ Claude Code прямо в Windows нужен Git for Windows: скрипты с�
 у Claude Code нет `Monitor`, на котором держатся подсказки. Плагины у Claude Code в WSL и в Windows свои — ставить
 в том, где идёт работа.
 
-На Linux окно записи открывается в первом найденном эмуляторе терминала: `x-terminal-emulator`, `gnome-terminal`,
-`konsole`, `xfce4-terminal`, `xterm`. Подсказка всплывает через `notify-send`, если он есть.
+На Linux окно записи открывается в терминале, выбранном в системе (`xdg-terminal-exec`). Его нет — в первом
+найденном из `ptyxis`, `x-terminal-emulator`, `gnome-terminal`, `konsole`, `xfce4-terminal`, `xterm`. Подсказка
+всплывает через `notify-send`, если он есть. В WSL скилл записывает через Windows: без `powershell.exe` — отказ.
 
 Приложение записи ещё не стоит — `/meeting start` предложит поставить его сам.
 

@@ -8,7 +8,8 @@
 # Встреча без «конец записи» в events.log ещё пишется (или оборвалась аварийно) — отказ здесь, а не в окне: сессия
 # узнаёт его сразу. Ту же проверку делает и meeting refine.
 #
-# Код 3 — приложение записи не установлено (нет корня встреч или meeting.exe) или поставлено без модели Whisper:
+# Код 3 — приложение записи не установлено (нет корня встреч, meeting или каталога моделей) или поставлено без модели
+# Whisper:
 # скилл предлагает meeting-install, она же обновляет установленное.
 # Код 4 — приложение старее плагина или его версию не распознать (check-app-version): скилл предлагает обновить его
 # тем же meeting-install.
@@ -26,12 +27,10 @@ fail() {
 here="$(cd "$(dirname "$0")" && pwd)"
 # Модель уточнения — SpeechModels.WhisperFile; её ставит установка, а установка до уточнения встречи её не ставила.
 whisper_file=ggml-large-v3-turbo-q5_0.bin
+# Отказ platform (WSL без Windows, другая ОС) — выход с ним же: присваивание под set -e.
+os=$(bash "$here/platform")
 windows=
-if command -v powershell.exe > /dev/null; then
-    windows=1
-elif [ "$(uname -s)" != Linux ]; then
-    fail "Уточнение запускается в Windows (из WSL или Git Bash) и на Linux."
-fi
+[ "$os" = linux ] || windows=1
 
 # Отказ meeting-dir (код 3 — не установлено) выходит отсюда с тем же кодом.
 dir=$(bash "$here/meeting-dir" "$@")
