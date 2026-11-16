@@ -1824,11 +1824,11 @@ mode_WhenInWsl_OpensWindowInSameDistroWithMeetingAndClaude() {
     new_meeting
     stub_mode_tools
 
-    PATH="$work/stub-mode:$PATH" WSL_DISTRO_NAME='Ubuntu Test' WSLENV=USERPROFILE/p \
+    PATH="$work/stub-mode:$PATH" WSL_DISTRO_NAME='Ubuntu-24.04' WSLENV=USERPROFILE/p \
         bash "$bin/meeting-mode" "$meeting" candidate || return 1
 
     local expected
-    expected=$(printf '%s\n' wsl.exe 'Ubuntu Test' "$bin/candidate-window" "$meeting" "$work/stub-mode/claude")
+    expected=$(printf '%s\n' wsl.exe 'Ubuntu-24.04' "$bin/candidate-window" "$meeting" "$work/stub-mode/claude")
     [ "$(cat "$work/window.env")" = "$expected" ] || { cat "$work/window.env"; return 1; }
     grep -q '^USERPROFILE/p:MEETING_WINDOW_PROGRAM:' "$work/window.wslenv" || { cat "$work/window.wslenv"; return 1; }
 }

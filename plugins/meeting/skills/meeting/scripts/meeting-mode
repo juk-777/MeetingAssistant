@@ -71,6 +71,9 @@ fi
 # Windows. Пути и имя дистрибутива — переменными окружения, а не в командной строке PowerShell: кавычки и кириллица
 # не ломают команду. Из Git Bash bash окна — свой, Windows-путь к нему и к скрипту.
 if [ -n "${WSL_DISTRO_NAME:-}" ]; then
+    # Имя дистрибутива — без кавычек в командной строке: wsl.exe их не снимает и ищет «"Ubuntu"» (WSL_E_DISTRO_NOT_FOUND).
+    # Пробелов в имени дистрибутива WSL не допускает.
+    [[ $WSL_DISTRO_NAME =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Имя дистрибутива WSL не разобрать: $WSL_DISTRO_NAME" >&2; exit 1; }
     export MEETING_WINDOW_PROGRAM=wsl.exe MEETING_WINDOW_DISTRO=$WSL_DISTRO_NAME
     export MEETING_WINDOW_SCRIPT=$window MEETING_WINDOW_DIR=$dir MEETING_WINDOW_CLAUDE=$claude
 else
@@ -87,7 +90,7 @@ export MSYS2_ENV_CONV_EXCL="${MSYS2_ENV_CONV_EXCL:+$MSYS2_ENV_CONV_EXCL;}MEETING
 powershell.exe -NoProfile -NonInteractive -Command '
 $ErrorActionPreference = "Stop"
 $arguments = @()
-if ($env:MEETING_WINDOW_DISTRO) { $arguments += "-d `"$env:MEETING_WINDOW_DISTRO`" -e bash" }
+if ($env:MEETING_WINDOW_DISTRO) { $arguments += "-d $env:MEETING_WINDOW_DISTRO -e bash" }
 $arguments += "`"$env:MEETING_WINDOW_SCRIPT`" `"$env:MEETING_WINDOW_DIR`" `"$env:MEETING_WINDOW_CLAUDE`""
 Start-Process -FilePath $env:MEETING_WINDOW_PROGRAM -ArgumentList ($arguments -join " ") -WorkingDirectory $env:USERPROFILE
 ' && exit 0
