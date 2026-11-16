@@ -15,7 +15,10 @@ scenario=$2
 repo=$(cd "$(dirname "$0")/.." && pwd)
 scripts="$repo/plugins/meeting/skills/meeting/scripts"
 work=$(mktemp -d)
+candidate=""
+# Выход стенда гасит и окно: каталог встречи удаляется, конца записи окно не увидит и само не выйдет.
 trap 'kill "$candidate" 2> /dev/null; rm -rf "$work"' EXIT
+trap 'exit 130' INT TERM HUP
 meeting="$work/meeting"
 mkdir -p "$meeting"
 : > "$meeting/transcript.md"
@@ -23,14 +26,28 @@ mkdir -p "$meeting"
 printf '{"mode": "candidate", "context": "собеседование по бэкенду (.NET), системный дизайн", "model": "%s"}\n' "$model" \
     > "$meeting/mode.json"
 
-# Вывод окна с отметкой времени каждого символа: «▶» открывает ответ, пустая строка после текста — его конец.
-bash "$scripts/meeting-candidate" "$meeting" 2> "$work/candidate.err" |
+# window_failed <причина>: отказ стенда с выводом ошибок окна — каталог работы ловушка выхода удалит.
+window_failed() {
+    echo "$1. Ошибки окна:" >&2
+    cat "$work/candidate.err" >&2
+    exit 1
+}
+
+# Вывод окна с отметкой времени каждого символа: «▶» открывает ответ, пустая строка после текста — его конец. Разметка —
+# подстановкой процесса, а не конвейером: так $! — само окно, и его гасит ловушка выхода.
+bash "$scripts/meeting-candidate" "$meeting" 2> "$work/candidate.err" > >(
     while IFS= read -r -d '' -N 1 char; do
         [ "$char" != $'\n' ] || char='\n'
         printf '%s\t%s\n' "${EPOCHREALTIME/,/.}" "$char"
-    done > "$work/out.tsv" &
+    done > "$work/out.tsv") &
 candidate=$!
-sleep 1
+# Строки, дописанные до приветствия окна, оно считает прошлыми и не разбирает: первая реплика ждёт конца его строки.
+deadline=$((SECONDS + 30))
+until grep -q $'\t\\\\n$' "$work/out.tsv" 2> /dev/null; do
+    kill -0 "$candidate" 2> /dev/null || window_failed "Окно вышло до приветствия"
+    [ $SECONDS -lt $deadline ] || window_failed "Окно не открылось за 30 с"
+    sleep 0.1
+done
 
 echo "$(claude --version), модель $model, effort low"
 number=0
@@ -43,7 +60,7 @@ while IFS= read -r question; do
     # Ответ дописан, когда в журнале встречи появился его блок.
     deadline=$((SECONDS + 120))
     until [ "$(grep -c '^## ' "$meeting/candidate.md" 2> /dev/null || echo 0)" -ge "$number" ]; do
-        [ $SECONDS -lt $deadline ] || { echo "реплика $number: ответа нет за 120 с — $work/candidate.err" >&2; exit 1; }
+        [ $SECONDS -lt $deadline ] || window_failed "Реплика $number: ответа нет за 120 с"
         sleep 0.2
     done
     tail -n +"$((lines_before + 1))" "$work/out.tsv" | awk -F'\t' -v written="$written" -v n="$number" '
