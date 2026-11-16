@@ -1613,9 +1613,10 @@ printf '{"type":"result","subtype":"success"}\n'
 EOF
     chmod +x "$work/claude"
     rm -f "$work/claude.args" "$work/claude.prompt"
-    # Уведомление — заглушкой powershell.exe, которая копит тексты: видно, сколько их было.
+    # Уведомление — заглушкой powershell.exe, которая копит тексты: видно, сколько их было. Как настоящий
+    # powershell.exe, она читает свой stdin: унаследованный поток ответа она бы съела.
     mkdir -p "$work/stub-ps-many"
-    printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$MEETING_NOTIFY_TEXT" >> "%s/notify.all"\n' "$work" > "$work/stub-ps-many/powershell.exe"
+    printf '#!/usr/bin/env bash\ntimeout 2 cat > /dev/null\nprintf "%%s\\n" "$MEETING_NOTIFY_TEXT" >> "%s/notify.all"\n' "$work" > "$work/stub-ps-many/powershell.exe"
     chmod +x "$work/stub-ps-many/powershell.exe"
     rm -f "$work/notify.all"
 }
