@@ -3,9 +3,13 @@
 # Каждый прогон — `meeting-candidate` скилла с настоящей моделью на новой встрече: в транскрипт пишутся строки случая,
 # ответ берётся из журнала окна (candidate.md). Так стенд меряет текущую редакцию запроса и вызова целиком.
 #
-# candidate_dash.sh <модель> <прогонов на случай> [каталог скриптов скилла]
+# candidate_dash.sh <модель> <прогонов на случай> [каталог скриптов скилла] [append]
 # Каталог скриптов — для сравнения с другой редакцией (`git archive` прошлого коммита); по умолчанию — рабочая копия.
-# В stderr — первая строка каждого ответа не «-»: пояснение вместо молчания счётчик не отличает от ответа.
+# `append` — те же скрипты, но правила окна идут поверх системного промпта Claude Code (`--append-system-prompt-file`
+# вместо `--system-prompt-file`, в копии скриптов).
+# Итог по случаю: «-» из числа прогонов без сбоев, сколько ответов не «-» по-английски, сколько сбоев (отказ модели,
+# оборванный или пустой ответ, нет ответа за 120 с). В stderr — первая строка каждого ответа не «-» (пояснение вместо
+# молчания счётчик не отличает от ответа) и каждого сбоя.
 # Случаи — синтетика, не из встречи: запись — моно-смесь, и последняя реплика «Собеседников» — речь кандидата,
 # оборванная (cut), законченная (own) или с заминкой (hesitation); ожидается «-». Контроль (question) — явный вопрос
 # интервьюера; ожидается ответ, а не «-». Ответ не по-русски — дефект в любом случае.
@@ -18,7 +22,17 @@ repo=$(cd "$(dirname "$0")/.." && pwd)
 scripts=${3:-$repo/plugins/meeting/skills/meeting/scripts}
 [ -f "$scripts/meeting-candidate" ] || { echo "Нет $scripts/meeting-candidate" >&2; exit 1; }
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+candidate=""
+# Прерванный стенд гасит и окно: оно опрашивает транскрипт до конца записи и само не выйдет.
+trap 'kill "$candidate" 2> /dev/null; rm -rf "$work"' EXIT
+trap 'exit 130' INT TERM HUP
+if [ "${4:-}" = append ]; then
+    cp -r "$scripts" "$work/scripts"
+    scripts="$work/scripts"
+    grep -q -- '--system-prompt-file' "$scripts/meeting-candidate" ||
+        { echo "В meeting-candidate нет --system-prompt-file: режим append не к чему применить" >&2; exit 1; }
+    sed -i 's/--system-prompt-file/--append-system-prompt-file/' "$scripts/meeting-candidate"
+fi
 mkdir "$work/bin"
 ln -s "$(command -v claude)" "$work/bin/claude"
 quiet_path="$work/bin:/usr/bin:/bin"
@@ -36,19 +50,24 @@ answer_for() {
     # ожидание ниже успело бы увидеть вывод прошлого прогона.
     : > "$work/window"
     PATH=$quiet_path bash "$scripts/meeting-candidate" "$meeting" >> "$work/window" 2>&1 &
-    local candidate=$!
+    candidate=$!
     # Строки, дописанные до приветствия окна, оно считает прошлыми и не разбирает.
-    until [ -s "$work/window" ]; do sleep 0.1; done
+    local deadline=$((SECONDS + 30))
+    until [ -s "$work/window" ]; do
+        [ $SECONDS -lt $deadline ] || { echo "окно не открылось за 30 с" >&2; exit 1; }
+        sleep 0.1
+    done
     cat "$1" >> "$meeting/transcript.md"
-    local deadline=$((SECONDS + 120))
+    deadline=$((SECONDS + 120))
     until grep -q '^## ' "$meeting/candidate.md" 2> /dev/null; do
         [ $SECONDS -lt $deadline ] || { echo "ответа нет за 120 с" >&2; break; }
         sleep 0.2
     done
     printf '1.0\t1\tконец записи\n' >> "$meeting/events.log"
     wait "$candidate"
-    # Тело блока журнала: «(нет ответа)» пишется на «-».
-    awk 'NR > 2' "$meeting/candidate.md" | sed '/^$/d' | sed 's/^(нет ответа)$/-/'
+    candidate=""
+    # Тело блока журнала: «(нет ответа)» пишется на «-»; журнала нет — пустой ответ, его стенд считает сбоем.
+    awk 'NR > 2' "$meeting/candidate.md" 2> /dev/null | sed '/^$/d' | sed 's/^(нет ответа)$/-/'
 }
 
 # Моно-смесь: обе стороны — «Собеседники», фразы длинные, вопрос и ответ сливаются в одну строку.
@@ -67,7 +86,9 @@ for case in cut own hesitation question; do
     english=0
     failed=0
     for run in $(seq "$runs"); do
-        answer=$(answer_for "$work/$case.md")
+        # Без подоболочки: ловушка выхода видит окно этого прогона и гасит его.
+        answer_for "$work/$case.md" > "$work/answer"
+        answer=$(< "$work/answer")
         # Отказ модели, оборванный или пустой ответ — не ответ и не молчание: в счёт не идёт.
         if [ -z "$answer" ] || [[ $answer == "(модель не ответила"* ]] || [[ $answer == *"(прервано)" ]]; then
             failed=$((failed + 1))
