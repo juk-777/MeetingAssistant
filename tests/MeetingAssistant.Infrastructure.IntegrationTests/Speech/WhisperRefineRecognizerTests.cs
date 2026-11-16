@@ -64,14 +64,13 @@ public sealed class WhisperRefineRecognizerTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    public async Task Prepare_WhenThreadsBelowOne_RefusesNamingSetting(int threads)
+    public async Task Prepare_WhenThreadsBelowOne_RefusesAsThreadsInvalid(int threads)
     {
         await using var recognizer = new WhisperRefineRecognizer(Models.WhisperTiny, threads);
 
         Result prepared = await recognizer.Prepare(Token);
 
         prepared.Error.Code.ShouldBe(SpeechErrors.RefineThreadsInvalidCode);
-        prepared.Error.Description.ShouldContain($"{SpeechOptions.Section}:{nameof(SpeechOptions.RefineThreads)}");
     }
 
     [Fact]

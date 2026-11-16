@@ -57,7 +57,7 @@ public sealed class SettingsValidationTests
     }
 
     [Fact]
-    public async Task Refine_WhenRefineThreadsInvalid_RefusesNamingSetting()
+    public async Task Refine_WhenRefineThreadsInvalid_RefusesAsThreadsInvalid()
     {
         await using ServiceProvider provider = Build(new Dictionary<string, string?>
         {

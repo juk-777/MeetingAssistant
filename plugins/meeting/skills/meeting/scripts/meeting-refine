@@ -64,6 +64,9 @@ powershell.exe -NoProfile -NonInteractive -Command '
 $ErrorActionPreference = "Stop"
 $env:Storage__MeetingsRoot = [Environment]::GetEnvironmentVariable("Storage__MeetingsRoot", "User")
 $env:Speech__ModelsDirectory = [Environment]::GetEnvironmentVariable("Speech__ModelsDirectory", "User")
+# Потоки уточнения — переменная пользователя, если он её задал; нет — умолчание из appsettings.json приложения.
+$refineThreads = [Environment]::GetEnvironmentVariable("Speech__RefineThreads", "User")
+if ($refineThreads) { $env:Speech__RefineThreads = $refineThreads }
 $meeting = Join-Path $env:LOCALAPPDATA "MeetingAssistant\app\meeting.exe"
 if (-not (Test-Path $meeting)) { [Console]::Error.WriteLine("Приложение записи не установлено: нет $meeting. Поставить — meeting-install."); exit 3 }
 if (-not $env:Speech__ModelsDirectory) { [Console]::Error.WriteLine("Приложение записи не установлено: нет переменной Speech__ModelsDirectory. Поставить — meeting-install."); exit 3 }
