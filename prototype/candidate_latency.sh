@@ -30,7 +30,12 @@ bash "$scripts/meeting-candidate" "$meeting" 2> "$work/candidate.err" |
         printf '%s\t%s\n' "${EPOCHREALTIME/,/.}" "$char"
     done > "$work/out.tsv" &
 candidate=$!
-sleep 1
+# Строки, дописанные до приветствия окна, оно считает прошлыми и не разбирает: первая реплика ждёт конца его строки.
+deadline=$((SECONDS + 30))
+until grep -q $'\t\\\\n$' "$work/out.tsv" 2> /dev/null; do
+    [ $SECONDS -lt $deadline ] || { echo "окно не открылось за 30 с — $work/candidate.err" >&2; exit 1; }
+    sleep 0.1
+done
 
 echo "$(claude --version), модель $model, effort low"
 number=0
