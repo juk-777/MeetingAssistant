@@ -1594,6 +1594,172 @@ release_WhenTagIsNotVersion_Refuses() {
     done
 }
 
+# stub_claude <пауза> <куски ответа…>: двойник `claude -p` — запрос (stdin) и аргументы пишет в claude.prompt и
+# claude.args, ответ отдаёт строками stream-json по куску с паузой перед каждым. Кусок — уже в виде JSON-строки.
+stub_claude() {
+    local pause=$1 part
+    shift
+    : > "$work/claude.parts"
+    for part in "$@"; do printf '%s\n' "$part" >> "$work/claude.parts"; done
+    cat > "$work/claude" << EOF
+#!/usr/bin/env bash
+cat > "$work/claude.prompt"
+printf '%s\n' "\$*" >> "$work/claude.args"
+while IFS= read -r part; do
+    sleep $pause
+    printf '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"%s"}}}\n' "\$part"
+done < "$work/claude.parts"
+printf '{"type":"result","subtype":"success"}\n'
+EOF
+    chmod +x "$work/claude"
+    rm -f "$work/claude.args" "$work/claude.prompt"
+    # Уведомление — заглушкой powershell.exe, которая копит тексты: видно, сколько их было.
+    mkdir -p "$work/stub-ps-many"
+    printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$MEETING_NOTIFY_TEXT" >> "%s/notify.all"\n' "$work" > "$work/stub-ps-many/powershell.exe"
+    chmod +x "$work/stub-ps-many/powershell.exe"
+    rm -f "$work/notify.all"
+}
+
+# start_candidate: meeting-candidate на встрече $meeting с двойником claude; ждёт строку приветствия — строки,
+# дописанные до неё, скрипт считает прошлыми.
+start_candidate() {
+    : >> "$meeting/transcript.md"
+    : >> "$meeting/events.log"
+    MEETING_CLAUDE="$work/claude" PATH="$work/stub-ps-many:$PATH" \
+        bash "$bin/meeting-candidate" "$meeting" > "$work/candidate.out" 2>&1 &
+    candidate_pid=$!
+    watchers+=("$candidate_pid")
+    wait_lines "$work/candidate.out" 1
+}
+
+# say <номер> <Я|Собеседники> <текст>
+say() {
+    printf '%s\t1762774261.%03d\t[00:00:%02d] %s: %s\n' "$1" "$1" "$1" "$2" "$3" >> "$meeting/transcript.md"
+}
+
+# wait_file_text <файл> <текст>: ждёт, пока в файле появится текст.
+wait_file_text() {
+    local deadline=$((SECONDS + LIMIT_SECONDS))
+    until grep -qF -- "$2" "$1" 2> /dev/null || [ $SECONDS -ge $deadline ]; do sleep 0.1; done
+    grep -qF -- "$2" "$1" 2> /dev/null || { echo "нет «$2» в $(basename "$1"):"; cat "$1" 2> /dev/null; return 1; }
+}
+
+candidate_WhenInterviewerAsksWithoutQuestionMark_StreamsAnswerAndJournals() {
+    new_meeting
+    stub_claude 0.05 'Суть: опыт с Kafka' '\n- партиции \"по ключу\"' '\n- Да'
+    start_candidate
+
+    say 1 Собеседники 'Расскажите о своём опыте с Kafka.'
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    local expected
+    expected=$(printf '## [00:00:01] Расскажите о своём опыте с Kafka.\n\nСуть: опыт с Kafka\n- партиции "по ключу"\n- Да')
+    [ "$(cat "$meeting/candidate.md")" = "$expected" ] || { cat "$meeting/candidate.md"; return 1; }
+    grep -qF -- '- партиции "по ключу"' "$work/candidate.out" || { cat "$work/candidate.out"; return 1; }
+}
+
+candidate_WhenOwnOrShortUtterance_DoesNotCallModel() {
+    new_meeting
+    stub_claude 0 'ответ'
+    start_candidate
+
+    say 1 Я 'Расскажу о своём опыте с Kafka подробно'
+    say 2 Собеседники 'Да, хорошо'
+    end_of_recording 2
+
+    expect_exit "$candidate_pid" 0 || return 1
+    [ ! -e "$work/claude.args" ] || { echo "модель вызвана: $(cat "$work/claude.args")"; return 1; }
+    [ ! -e "$meeting/candidate.md" ] || { cat "$meeting/candidate.md"; return 1; }
+}
+
+candidate_WhenLinesBeforeStart_DoesNotAnswerThem() {
+    new_meeting
+    stub_claude 0 'ответ'
+    say 1 Собеседники 'Расскажите о себе подробно'
+    start_candidate
+
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    [ ! -e "$work/claude.args" ] || { echo "модель вызвана: $(cat "$work/claude.args")"; return 1; }
+}
+
+candidate_WhenNewUtteranceDuringAnswer_CancelsPreviousAnswer() {
+    new_meeting
+    stub_claude 0.6 'Суть: первая' '\n- тезис' '\n- ещё'
+    start_candidate
+
+    say 1 Собеседники 'Расскажите о своём опыте с Kafka.'
+    wait_file_text "$work/candidate.out" 'Суть: первая' || return 1
+    say 2 Собеседники 'А как вы делали партиционирование?'
+    wait_file_text "$meeting/candidate.md" '[00:00:02]' || return 1
+    end_of_recording 2
+
+    expect_exit "$candidate_pid" 0 || return 1
+    grep -qF 'Суть: первая … (прервано)' "$meeting/candidate.md" || { cat "$meeting/candidate.md"; return 1; }
+    [ "$(grep -c '^## ' "$meeting/candidate.md")" -eq 2 ] || { cat "$meeting/candidate.md"; return 1; }
+    [ "$(grep -c '' "$work/claude.args")" -eq 2 ] || { echo "вызовов: $(grep -c '' "$work/claude.args")"; return 1; }
+}
+
+candidate_WhenFirstLineComplete_NotifiesItOnce() {
+    new_meeting
+    stub_claude 0.05 'Суть: шардирование' '\n- тезис один' '\n- тезис два'
+    start_candidate
+
+    say 1 Собеседники 'Как бы вы масштабировали сервис?'
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    wait_file_text "$work/notify.all" 'Суть: шардирование' || return 1
+    sleep 0.3
+    [ "$(cat "$work/notify.all")" = "Суть: шардирование" ] || { cat "$work/notify.all"; return 1; }
+}
+
+candidate_WhenModelAnswersDash_JournalsNoAnswerWithoutNotification() {
+    new_meeting
+    stub_claude 0 '-'
+    start_candidate
+
+    say 1 Собеседники 'Подождите секунду, я найду ссылку'
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    grep -qF '(нет ответа)' "$meeting/candidate.md" || { cat "$meeting/candidate.md"; return 1; }
+    sleep 0.3
+    [ ! -e "$work/notify.all" ] || { echo "уведомление: $(cat "$work/notify.all")"; return 1; }
+}
+
+candidate_WhenModeAndNotesGiven_PassesModelContextAndNotes() {
+    new_meeting
+    stub_claude 0 'ответ'
+    printf '{"mode": "candidate", "context": "системный \\"дизайн\\"", "model": "sonnet"}' > "$meeting/mode.json"
+    printf '# резюме.md\n\nПять лет на .NET\n' > "$meeting/notes.md"
+    start_candidate
+
+    say 1 Собеседники 'Расскажите о своём опыте с .NET'
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    grep -q -- '--model sonnet --effort low' "$work/claude.args" || { cat "$work/claude.args"; return 1; }
+    grep -qF 'Контекст собеседования: системный "дизайн"' "$work/claude.prompt" || { cat "$work/claude.prompt"; return 1; }
+    grep -qF 'Пять лет на .NET' "$work/claude.prompt" || { cat "$work/claude.prompt"; return 1; }
+    grep -qF 'Последняя реплика интервьюера: Расскажите о своём опыте с .NET' "$work/claude.prompt" ||
+        { cat "$work/claude.prompt"; return 1; }
+}
+
+candidate_WhenNoModeJson_UsesOpus() {
+    new_meeting
+    stub_claude 0 'ответ'
+    start_candidate
+
+    say 1 Собеседники 'Расскажите о своём опыте с .NET'
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    grep -q -- '--model opus --effort low' "$work/claude.args" || { cat "$work/claude.args"; return 1; }
+}
+
 for test in $(declare -F | awk '{ print $3 }' | grep -E '^[a-z]+_When'); do
     run "$test"
 done
