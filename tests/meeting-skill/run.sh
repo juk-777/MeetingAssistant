@@ -1485,8 +1485,13 @@ linuxrefine_WhenRefineThreadsInSession_PassesThemToWindow() {
     linux_installed || return 1
     new_meeting
     printf '1\t1762774261.000\tконец записи\n' > "$meeting/events.log"
-    stub_terminal "$work/stub-term" x-terminal-emulator -e
-    LINUX_SKILL_ENV=Speech__RefineThreads=6 linux_skill "$work/stub-term" meeting-refine "$meeting" > /dev/null || return 1
+    # Эмулятор, который окружения сессии не наследует: команду окна он исполняет без переменной.
+    mkdir -p "$work/stub-term"
+    printf '#!/usr/bin/env bash\n[ "$1" = -e ] && shift\nenv -u Speech__RefineThreads "$@"\n' \
+        > "$work/stub-term/x-terminal-emulator"
+    chmod +x "$work/stub-term/x-terminal-emulator"
+    LINUX_SKILL_ENV=Speech__RefineThreads=6 linux_skill "$work/stub-term" meeting-refine "$meeting" > /dev/null ||
+        return 1
     [ "$(sed -n 3p "$work/linux-meeting.env")" = 6 ] || { cat "$work/linux-meeting.env"; return 1; }
 }
 
