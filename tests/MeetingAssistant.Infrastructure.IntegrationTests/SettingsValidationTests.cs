@@ -1,6 +1,8 @@
+using MeetingAssistant.Application.Meetings.Refine;
 using MeetingAssistant.Infrastructure.IntegrationTests.Speech;
 using MeetingAssistant.Infrastructure.Speech;
 using MeetingAssistant.Infrastructure.Storage;
+using MeetingAssistant.SharedKernel;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -52,6 +54,21 @@ public sealed class SettingsValidationTests
         ValidateOptionsResult result = new SpeechOptionsValidator().Validate(null, options);
 
         result.Succeeded.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Refine_WhenRefineThreadsInvalid_RefusesNamingSetting()
+    {
+        await using ServiceProvider provider = Build(new Dictionary<string, string?>
+        {
+            [$"{SpeechOptions.Section}:{nameof(SpeechOptions.ModelsDirectory)}"] = Models.Directory,
+            [$"{SpeechOptions.Section}:{nameof(SpeechOptions.RecognizerThreads)}"] = "2",
+            [$"{SpeechOptions.Section}:{nameof(SpeechOptions.RefineThreads)}"] = "0",
+        });
+
+        Result prepared = await provider.GetRequiredService<IRefineRecognizer>().Prepare(TestContext.Current.CancellationToken);
+
+        prepared.Error.Code.ShouldBe(SpeechErrors.RefineThreadsInvalidCode);
     }
 
     private static ServiceProvider Build(Dictionary<string, string?> settings)
