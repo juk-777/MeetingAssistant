@@ -66,6 +66,7 @@ public sealed class WhisperRefineRecognizerTests
     [InlineData("0")]
     [InlineData("-1")]
     [InlineData("four")]
+    [InlineData("4.0")]
     [InlineData("")]
     [InlineData(null)]
     public async Task Prepare_WhenThreadsNotPositiveInteger_RefusesAsThreadsInvalidBeforeModel(string? threads)

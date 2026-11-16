@@ -67,6 +67,22 @@ public sealed class SettingsValidationTests
         prepared.Error.Code.ShouldBe(SpeechErrors.RefineThreadsInvalidCode);
     }
 
+    // Prepare не зовётся: годная настройка загрузила бы модель уточнения из каталога моделей.
+    [Fact]
+    public async Task Refine_WhenRefineThreadsValid_RecognizerTakesThem()
+    {
+        await using ServiceProvider provider = Build(new Dictionary<string, string?>
+        {
+            [$"{SpeechOptions.Section}:{nameof(SpeechOptions.ModelsDirectory)}"] = Models.Directory,
+            [$"{SpeechOptions.Section}:{nameof(SpeechOptions.RecognizerThreads)}"] = "2",
+            [$"{SpeechOptions.Section}:{nameof(SpeechOptions.RefineThreads)}"] = " 2 ",
+        });
+
+        var recognizer = (WhisperRefineRecognizer)provider.GetRequiredService<IRefineRecognizer>();
+
+        recognizer.Threads.ShouldBe(WhisperRefineRecognizer.ThreadsFor(2, Environment.ProcessorCount));
+    }
+
     private static ServiceProvider Build(Dictionary<string, string?> settings)
     {
         IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();

@@ -25,7 +25,7 @@ internal sealed class WhisperRefineRecognizer(string modelPath, string? configur
     public const string Language = "ru";
 
     private readonly int? _threads =
-        int.TryParse(configuredThreads, NumberStyles.None, CultureInfo.InvariantCulture, out int threads) && threads >= 1
+        int.TryParse(configuredThreads, NumberStyles.Integer, CultureInfo.InvariantCulture, out int threads) && threads >= 1
             ? threads
             : null;
 
