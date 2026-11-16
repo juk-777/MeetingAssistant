@@ -15,6 +15,12 @@ public sealed class SpeechOptions
     public required string ModelsDirectory { get; init; }
 
     public required int RecognizerThreads { get; init; }
+
+    /// <summary>
+    /// Потоки Whisper при уточнении встречи: не больше половины логических процессоров. Проверяет уточнение, а не
+    /// старт: запись от этой настройки не зависит.
+    /// </summary>
+    public required int RefineThreads { get; init; }
 }
 
 /// <summary>

@@ -36,12 +36,22 @@ public sealed class SettingsValidationTests
     [InlineData(null, -1, nameof(SpeechOptions.RecognizerThreads))]
     public void Speech_WhenSettingInvalid_FailsNamingSetting(string? modelsDirectory, int threads, string setting)
     {
-        var options = new SpeechOptions { ModelsDirectory = modelsDirectory ?? Models.Directory, RecognizerThreads = threads };
+        var options = new SpeechOptions { ModelsDirectory = modelsDirectory ?? Models.Directory, RecognizerThreads = threads, RefineThreads = 4 };
 
         ValidateOptionsResult result = new SpeechOptionsValidator().Validate(null, options);
 
         result.Failed.ShouldBeTrue();
         result.FailureMessage.ShouldNotBeNull().ShouldContain($"{SpeechOptions.Section}:{setting}");
+    }
+
+    [Fact]
+    public void Speech_WhenRefineThreadsInvalid_RecordingStillValid()
+    {
+        var options = new SpeechOptions { ModelsDirectory = Models.Directory, RecognizerThreads = 2, RefineThreads = 0 };
+
+        ValidateOptionsResult result = new SpeechOptionsValidator().Validate(null, options);
+
+        result.Succeeded.ShouldBeTrue();
     }
 
     private static ServiceProvider Build(Dictionary<string, string?> settings)

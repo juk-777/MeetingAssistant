@@ -17,7 +17,7 @@ public sealed class WhisperRefineRecognizerTests
     public async Task Recognize_WhenPreparedAndExampleSpeech_ReturnsRussianSegmentsWithinTheSpeech()
     {
         Models.EnsureWhisperTinyPresent();
-        await using var recognizer = new WhisperRefineRecognizer(Models.WhisperTiny);
+        await using var recognizer = new WhisperRefineRecognizer(Models.WhisperTiny, 4);
         float[] example = Models.ReadExample();
 
         Result prepared = await recognizer.Prepare(Token);
@@ -36,17 +36,48 @@ public sealed class WhisperRefineRecognizerTests
     [Fact]
     public async Task Prepare_WhenModelMissing_RefusesAsModelMissing()
     {
-        await using var recognizer = new WhisperRefineRecognizer(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.bin"));
+        await using var recognizer = new WhisperRefineRecognizer(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.bin"), 4);
 
         Result prepared = await recognizer.Prepare(Token);
 
         prepared.Error.Code.ShouldBe(SpeechErrors.ModelMissingCode);
     }
 
+    [Theory]
+    [InlineData(4, 16, 4)]
+    [InlineData(12, 16, 8)]
+    [InlineData(4, 4, 2)]
+    [InlineData(4, 1, 1)]
+    public void ThreadsFor_TakesSettingButNotMoreThanHalfOfProcessors(int configured, int processors, int expected)
+    {
+        WhisperRefineRecognizer.ThreadsFor(configured, processors).ShouldBe(expected);
+    }
+
+    [Fact]
+    public async Task Threads_WhenSettingBelowHalfOfProcessors_TakesSetting()
+    {
+        await using var recognizer = new WhisperRefineRecognizer(Models.WhisperTiny, 1);
+
+        recognizer.Threads.ShouldBe(1);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task Prepare_WhenThreadsBelowOne_RefusesNamingSetting(int threads)
+    {
+        await using var recognizer = new WhisperRefineRecognizer(Models.WhisperTiny, threads);
+
+        Result prepared = await recognizer.Prepare(Token);
+
+        prepared.Error.Code.ShouldBe(SpeechErrors.RefineThreadsInvalidCode);
+        prepared.Error.Description.ShouldContain($"{SpeechOptions.Section}:{nameof(SpeechOptions.RefineThreads)}");
+    }
+
     [Fact]
     public async Task Recognize_WhenNotPrepared_Throws()
     {
-        await using var recognizer = new WhisperRefineRecognizer(Models.WhisperTiny);
+        await using var recognizer = new WhisperRefineRecognizer(Models.WhisperTiny, 4);
 
         await Should.ThrowAsync<InvalidOperationException>(recognizer.Recognize(new float[16_000], Token));
     }
