@@ -140,7 +140,9 @@ tests/
   ушло в детектор речи, поэтому `meeting replay audio.wav` повторяет встречу. Заголовок обновляется каждую секунду
   звука: при обрыве процесса файл читается до этого места.
 - **Нарезка.** Silero VAD из sherpa-onnx, отдельный экземпляр на канал. Параметры прототипа: порог 0.5,
-  `min_silence_duration` 0.5 с, `min_speech_duration` 0.25 с, `max_speech_duration` 20 с. Звук подаётся
+  `min_silence_duration` 0.5 с, `min_speech_duration` 0.25 с, `max_speech_duration` 20 с. Последний — порог, а
+  не предел: фраза длиннее режется на первой короткой паузе, жёсткого предела длины нет (на записях созвонов p99 —
+  25 с, max — 35.6 с; `docs/decisions.md`, «sherpa-onnx VAD: `max_speech_duration` — порог»). Звук подаётся
   детектору ровно окнами Silero по 512 отсчётов, независимо от того, какими кусками он пришёл
   (`docs/decisions.md`, «sherpa-onnx VAD — только окнами Silero»).
 - **Распознавание.** GigaAM v3 CTC с пунктуацией, `OfflineRecognizer` (NeMo CTC), int8, 2 потока, модель грузится
