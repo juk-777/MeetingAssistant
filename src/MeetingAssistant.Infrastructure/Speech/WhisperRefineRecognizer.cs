@@ -1,3 +1,4 @@
+using System.Globalization;
 using MeetingAssistant.Application.Meetings.Refine;
 using MeetingAssistant.SharedKernel;
 using Whisper.net;
@@ -5,21 +6,40 @@ using Whisper.net;
 namespace MeetingAssistant.Infrastructure.Speech;
 
 /// <summary>
-/// Whisper через Whisper.net: русский, кусок без контекста предыдущего, половина логических процессоров.
+/// Whisper через Whisper.net: русский, кусок без контекста предыдущего, потоки — из настройки, но не больше половины
+/// логических процессоров.
 /// </summary>
 /// <remarks>
 /// Без контекста — опора на прошлый вывод уводит модель в петлю повторов на записи с провалами. Модель ставит
 /// установка рядом с остальными; грузится она в <see cref="Prepare"/>, а не в конструкторе: сначала проверяется
 /// встреча, и отказ по ней не ждёт загрузки 574 МБ. Вызывается одним потоком сценария.
 /// </remarks>
-internal sealed class WhisperRefineRecognizer(string modelPath) : IRefineRecognizer, IAsyncDisposable
+/// <param name="modelPath">Файл модели ggml.</param>
+/// <param name="configuredThreads">
+/// Настройка <c>Speech:RefineThreads</c> как есть: разбирается здесь, а не биндером настроек — опечатка в ней
+/// отказывает уточнению, а не всем командам приложения.
+/// </param>
+internal sealed class WhisperRefineRecognizer(string modelPath, string? configuredThreads)
+    : IRefineRecognizer, IAsyncDisposable
 {
     public const string Language = "ru";
+
+    private readonly int? _threads =
+        int.TryParse(configuredThreads, NumberStyles.Integer, CultureInfo.InvariantCulture, out int threads) && threads >= 1
+            ? threads
+            : null;
 
     private WhisperFactory? _factory;
     private WhisperProcessor? _processor;
 
-    public static int Threads => Math.Max(1, Environment.ProcessorCount / 2);
+    /// <summary>
+    /// Потоки Whisper: уточнение идёт после встречи и не держит больше половины машины, даже если настройка выше.
+    /// Настройка негодна — <see cref="Prepare"/> откажет раньше, чем потоки понадобятся.
+    /// </summary>
+    public int Threads => ThreadsFor(_threads ?? 1, Environment.ProcessorCount);
+
+    public static int ThreadsFor(int configuredThreads, int processorCount) =>
+        Math.Min(configuredThreads, Math.Max(1, processorCount / 2));
 
     /// <summary>
     /// Окно кодировщика Whisper: кусок короче всё равно считается как 30 с.
@@ -31,6 +51,11 @@ internal sealed class WhisperRefineRecognizer(string modelPath) : IRefineRecogni
         if (_processor is not null)
         {
             return Task.FromResult(Result.Success());
+        }
+
+        if (_threads is null)
+        {
+            return Task.FromResult(Result.Failure(SpeechErrors.RefineThreadsInvalid(configuredThreads)));
         }
 
         if (!File.Exists(modelPath))

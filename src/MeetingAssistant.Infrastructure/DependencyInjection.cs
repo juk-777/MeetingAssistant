@@ -43,8 +43,11 @@ public static class DependencyInjection
 
         services.AddSingleton<IRecordedMeetings, RecordedMeetingFolder>();
         services.AddSingleton<IRefinedTranscripts, RefinedTranscriptFiles>();
-        services.AddSingleton<IRefineRecognizer>(provider => new WhisperRefineRecognizer(
-            SpeechModels.Whisper(provider.GetRequiredService<IOptions<SpeechOptions>>().Value.ModelsDirectory)));
+        services.AddSingleton<IRefineRecognizer>(provider =>
+        {
+            SpeechOptions speechOptions = provider.GetRequiredService<IOptions<SpeechOptions>>().Value;
+            return new WhisperRefineRecognizer(SpeechModels.Whisper(speechOptions.ModelsDirectory), speechOptions.RefineThreads);
+        });
 
         return services;
     }

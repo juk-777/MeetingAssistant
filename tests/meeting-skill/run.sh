@@ -1270,8 +1270,8 @@ linux_skill() {
     [[ $script == */* ]] || script="$bin/$script"
     linux_bin
     mkdir -p "$stubs"
-    env -u XDG_DATA_HOME -u Storage__MeetingsRoot -u Speech__ModelsDirectory -u MEETINGS_ROOT -u WSL_DISTRO_NAME \
-        HOME="$home" PATH="$stubs:$work/linux-bin" bash "$script" "$@"
+    env -u XDG_DATA_HOME -u Storage__MeetingsRoot -u Speech__ModelsDirectory -u Speech__RefineThreads -u MEETINGS_ROOT \
+        -u WSL_DISTRO_NAME ${LINUX_SKILL_ENV:-} HOME="$home" PATH="$stubs:$work/linux-bin" bash "$script" "$@"
 }
 
 # linux_installed: install.sh ставит в $home заглушку meeting. На --version она отвечает 9.9.9, на остальное пишет
@@ -1281,7 +1281,7 @@ linux_installed() {
     linuxsetup_release 9.9.9 "$(cat <<EOF
 [ "\$1" != --version ] || { echo 9.9.9; exit 0; }
 printf '%s\n' "\$@" > "$work/linux-meeting.args"
-printf '%s\n%s\n' "\$Storage__MeetingsRoot" "\$Speech__ModelsDirectory" > "$work/linux-meeting.env"
+printf '%s\n%s\n%s\n' "\$Storage__MeetingsRoot" "\$Speech__ModelsDirectory" "\${Speech__RefineThreads:-}" > "$work/linux-meeting.env"
 [ ! -f "$work/start.next" ] || cp "$work/start.next" "\$Storage__MeetingsRoot/current.json"
 EOF
 )"
@@ -1345,7 +1345,7 @@ linuxstart_WhenNewMeetingAppears_PassesNameAsIsAndPrintsIt() {
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
     [ "$(cat "$work/linux-meeting.args")" = "$(printf '%s\n' start "$name" --glossary "$work/словарь.txt")" ] ||
         { cat "$work/linux-meeting.args"; return 1; }
-    [ "$(cat "$work/linux-meeting.env")" = "$(printf '%s\n' "$work/linux-root" "$home/.local/share/meeting-assistant/models")" ] ||
+    [ "$(cat "$work/linux-meeting.env")" = "$(printf '%s\n' "$work/linux-root" "$home/.local/share/meeting-assistant/models" '')" ] ||
         { cat "$work/linux-meeting.env"; return 1; }
 }
 
@@ -1476,8 +1476,23 @@ linuxrefine_WhenMeetingFinished_OpensWindowForItAndPrintsIt() {
     [ "$got" = "$meeting" ] || { echo "получено: $got"; return 1; }
     [ "$(cat "$work/linux-meeting.args")" = "$(printf '%s\n' refine "$meeting")" ] ||
         { cat "$work/linux-meeting.args"; return 1; }
-    [ "$(cat "$work/linux-meeting.env")" = "$(printf '%s\n' "$work/linux-root" "$home/.local/share/meeting-assistant/models")" ] ||
+    [ "$(cat "$work/linux-meeting.env")" = "$(printf '%s\n' "$work/linux-root" "$home/.local/share/meeting-assistant/models" '')" ] ||
         { cat "$work/linux-meeting.env"; return 1; }
+}
+
+# Эмулятор с сервером окон окружения сессии не наследует: потоки уточнения доходят до окна аргументом.
+linuxrefine_WhenRefineThreadsInSession_PassesThemToWindow() {
+    linux_installed || return 1
+    new_meeting
+    printf '1\t1762774261.000\tконец записи\n' > "$meeting/events.log"
+    # Эмулятор, который окружения сессии не наследует: команду окна он исполняет без переменной.
+    mkdir -p "$work/stub-term"
+    printf '#!/usr/bin/env bash\n[ "$1" = -e ] && shift\nenv -u Speech__RefineThreads "$@"\n' \
+        > "$work/stub-term/x-terminal-emulator"
+    chmod +x "$work/stub-term/x-terminal-emulator"
+    LINUX_SKILL_ENV=Speech__RefineThreads=6 linux_skill "$work/stub-term" meeting-refine "$meeting" > /dev/null ||
+        return 1
+    [ "$(sed -n 3p "$work/linux-meeting.env")" = 6 ] || { cat "$work/linux-meeting.env"; return 1; }
 }
 
 linuxrefine_WhenWhisperMissing_ExitsAsNotInstalledWithoutWindow() {

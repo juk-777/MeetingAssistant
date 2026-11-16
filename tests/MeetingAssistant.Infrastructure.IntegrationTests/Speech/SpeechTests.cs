@@ -14,7 +14,7 @@ public sealed class SpeechTests
     private const int ReplayChunk = SpeechAudio.SampleRate / 10;
 
     private static readonly IOptions<SpeechOptions> Settings = Options.Create(
-        new SpeechOptions { ModelsDirectory = Models.Directory, RecognizerThreads = 2 });
+        new SpeechOptions { ModelsDirectory = Models.Directory, RecognizerThreads = 2, RefineThreads = "4" });
 
     // Лениво: без моделей падают тесты, которым нужна запись, с командой скачивания, а не весь класс.
     private static readonly Lazy<float[]> LazyExample = new(Models.ReadExample);
@@ -79,7 +79,7 @@ public sealed class SpeechTests
         {
             ValidateOptionsResult result = new SpeechOptionsValidator().Validate(
                 null,
-                new SpeechOptions { ModelsDirectory = empty.FullName, RecognizerThreads = 2 });
+                new SpeechOptions { ModelsDirectory = empty.FullName, RecognizerThreads = 2, RefineThreads = "4" });
 
             result.Failed.ShouldBeTrue();
             string message = result.FailureMessage.ShouldNotBeNull();

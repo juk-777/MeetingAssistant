@@ -1,6 +1,8 @@
+using MeetingAssistant.Application.Meetings.Refine;
 using MeetingAssistant.Infrastructure.IntegrationTests.Speech;
 using MeetingAssistant.Infrastructure.Speech;
 using MeetingAssistant.Infrastructure.Storage;
+using MeetingAssistant.SharedKernel;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -36,12 +38,49 @@ public sealed class SettingsValidationTests
     [InlineData(null, -1, nameof(SpeechOptions.RecognizerThreads))]
     public void Speech_WhenSettingInvalid_FailsNamingSetting(string? modelsDirectory, int threads, string setting)
     {
-        var options = new SpeechOptions { ModelsDirectory = modelsDirectory ?? Models.Directory, RecognizerThreads = threads };
+        var options = new SpeechOptions { ModelsDirectory = modelsDirectory ?? Models.Directory, RecognizerThreads = threads, RefineThreads = "4" };
 
         ValidateOptionsResult result = new SpeechOptionsValidator().Validate(null, options);
 
         result.Failed.ShouldBeTrue();
         result.FailureMessage.ShouldNotBeNull().ShouldContain($"{SpeechOptions.Section}:{setting}");
+    }
+
+    // Запись от настройки уточнения не зависит: даже нечисловое значение не роняет проверку настроек на старте, а
+    // уточнение из того же контейнера отказывает своим кодом.
+    [Theory]
+    [InlineData("0")]
+    [InlineData("four")]
+    public async Task Speech_WhenRefineThreadsInvalid_StartValidAndRefineRefuses(string threads)
+    {
+        await using ServiceProvider provider = Build(new Dictionary<string, string?>
+        {
+            [$"{StorageOptions.Section}:{nameof(StorageOptions.MeetingsRoot)}"] = Path.GetTempPath(),
+            [$"{SpeechOptions.Section}:{nameof(SpeechOptions.ModelsDirectory)}"] = Models.Directory,
+            [$"{SpeechOptions.Section}:{nameof(SpeechOptions.RecognizerThreads)}"] = "2",
+            [$"{SpeechOptions.Section}:{nameof(SpeechOptions.RefineThreads)}"] = threads,
+        });
+
+        Should.NotThrow(() => provider.GetRequiredService<IStartupValidator>().Validate());
+        Result prepared = await provider.GetRequiredService<IRefineRecognizer>().Prepare(TestContext.Current.CancellationToken);
+
+        prepared.Error.Code.ShouldBe(SpeechErrors.RefineThreadsInvalidCode);
+    }
+
+    // Prepare не зовётся: годная настройка загрузила бы модель уточнения из каталога моделей.
+    [Fact]
+    public async Task Refine_WhenRefineThreadsValid_RecognizerTakesThem()
+    {
+        await using ServiceProvider provider = Build(new Dictionary<string, string?>
+        {
+            [$"{SpeechOptions.Section}:{nameof(SpeechOptions.ModelsDirectory)}"] = Models.Directory,
+            [$"{SpeechOptions.Section}:{nameof(SpeechOptions.RecognizerThreads)}"] = "2",
+            [$"{SpeechOptions.Section}:{nameof(SpeechOptions.RefineThreads)}"] = " 2 ",
+        });
+
+        var recognizer = (WhisperRefineRecognizer)provider.GetRequiredService<IRefineRecognizer>();
+
+        recognizer.Threads.ShouldBe(WhisperRefineRecognizer.ThreadsFor(2, Environment.ProcessorCount));
     }
 
     private static ServiceProvider Build(Dictionary<string, string?> settings)

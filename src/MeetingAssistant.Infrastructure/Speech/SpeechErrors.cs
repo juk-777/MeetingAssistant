@@ -11,4 +11,11 @@ public static class SpeechErrors
 
     public static Error ModelMissing(string path) =>
         new(ModelMissingCode, $"Нет модели {path}.\n{SpeechModels.DownloadHint}");
+
+    public const string RefineThreadsInvalidCode = "Speech.RefineThreadsInvalid";
+
+    public static Error RefineThreadsInvalid(string? threads) =>
+        new(RefineThreadsInvalidCode,
+            $"Число потоков уточнения — целое от 1, {(threads is null ? "не задано" : $"задано «{threads}»")}: " +
+            $"{SpeechOptions.Section}:{nameof(SpeechOptions.RefineThreads)}.");
 }

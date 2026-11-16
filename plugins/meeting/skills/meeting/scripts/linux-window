@@ -23,14 +23,20 @@ app=$(bash "$here/linux-setting" app)
 [ -n "$models" ] ||
     { echo "Приложение записи не установлено: нет Speech__ModelsDirectory. Поставить — meeting-install." >&2; exit 3; }
 
+# Потоки уточнения — из окружения сессии, если пользователь их задал: эмулятор с сервером окон (gnome-terminal,
+# ptyxis) окружения сессии не наследует, поэтому значение идёт аргументом, как корень и модели.
+refine_threads=${Speech__RefineThreads:-}
+
 # shellcheck disable=SC2016 # параметры раскрывает оболочка окна
-window='Storage__MeetingsRoot=$1 Speech__ModelsDirectory=$2 "$3" "${@:4}"
+window='[ -z "$3" ] || export Speech__RefineThreads=$3
+Storage__MeetingsRoot=$1 Speech__ModelsDirectory=$2 "$4" "${@:5}"
 read -rsn1 -p "Окно можно закрыть: любая клавиша." || true'
 
-bash "$here/linux-terminal" "$window" meeting "$root" "$models" "$app" "$@" && exit 0
+bash "$here/linux-terminal" "$window" meeting "$root" "$models" "$refine_threads" "$app" "$@" && exit 0
 
 {
     echo "Запустите в терминале:"
+    [ -z "$refine_threads" ] || printf '  Speech__RefineThreads=%q' "$refine_threads"
     printf '  Storage__MeetingsRoot=%q Speech__ModelsDirectory=%q %q' "$root" "$models" "$app"
     printf ' %q' "$@"
     echo
