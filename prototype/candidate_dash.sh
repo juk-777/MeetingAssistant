@@ -31,9 +31,10 @@ answer_for() {
     : > "$meeting/events.log"
     printf '{"mode": "candidate", "model": "%s"}\n' "$model" > "$meeting/mode.json"
     # Без уведомлений: окно шлёт их через powershell.exe (WSL) или notify-send — стенду они не нужны.
-    PATH=$quiet_path bash "$scripts/meeting-candidate" "$meeting" > /dev/null 2>&1 &
+    PATH=$quiet_path bash "$scripts/meeting-candidate" "$meeting" > "$work/window" 2>&1 &
     local candidate=$!
-    sleep 0.5
+    # Строки, дописанные до приветствия окна, оно считает прошлыми и не разбирает.
+    until [ -s "$work/window" ]; do sleep 0.1; done
     cat "$1" >> "$meeting/transcript.md"
     local deadline=$((SECONDS + 120))
     until grep -q '^## ' "$meeting/candidate.md" 2> /dev/null; do
@@ -60,8 +61,15 @@ echo "$(claude --version), модель $model, effort low"
 for case in cut own hesitation question; do
     dash=0
     english=0
+    failed=0
     for run in $(seq "$runs"); do
         answer=$(answer_for "$work/$case.md")
+        # Отказ модели, оборванный или пустой ответ — не ответ и не молчание: в счёт не идёт.
+        if [ -z "$answer" ] || [[ $answer == "(модель не ответила"* ]] || [[ $answer == *"(прервано)" ]]; then
+            failed=$((failed + 1))
+            printf '  сбой: %s\n' "$(head -n 1 <<< "$answer" | cut -c1-120)" >&2
+            continue
+        fi
         [ "$answer" != "-" ] || dash=$((dash + 1))
         # По-английски — латиницы в ответе больше, чем кириллицы (термины латиницей в русском ответе допустимы).
         cyr=$(printf '%s' "$answer" | grep -oP '\p{Cyrillic}' | wc -l)
@@ -70,5 +78,5 @@ for case in cut own hesitation question; do
         # Не «-» — первая строка ответа: пояснение вместо молчания видно только глазами.
         [ "$answer" = "-" ] || printf '  %s\n' "$(head -n 1 <<< "$answer" | cut -c1-120)" >&2
     done
-    printf '%s: «-» %d из %d, по-английски %d\n' "$case" "$dash" "$runs" "$english"
+    printf '%s: «-» %d из %d, по-английски %d, сбоев %d\n' "$case" "$dash" "$((runs - failed))" "$english" "$failed"
 done
