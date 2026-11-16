@@ -141,6 +141,7 @@ skip_reason() {
             install_*) echo "install-skill.sh — путь разработчика в WSL; в Windows скилл из рабочей копии — claude --plugin-dir" ;;
             linux*_*) echo "путь Linux (install.sh, окно эмулятора терминала, notify-send); в Windows — powershell.exe" ;;
             *_WhenSkillLinked_*) echo "ссылка на скилл — путь разработчика в WSL (install-skill.sh); ln -s Git Bash копирует" ;;
+            *_WhenWindowClosed_*) echo "закрытие окна — через script(1) и псевдотерминал, в Git Bash их нет" ;;
             *) return 1 ;;
         esac
     else
@@ -1747,6 +1748,64 @@ candidate_WhenModeAndNotesGiven_PassesModelContextAndNotes() {
     grep -qF 'Пять лет на .NET' "$work/claude.prompt" || { cat "$work/claude.prompt"; return 1; }
     grep -qF 'Последняя реплика интервьюера: Расскажите о своём опыте с .NET' "$work/claude.prompt" ||
         { cat "$work/claude.prompt"; return 1; }
+}
+
+candidate_WhenUtteranceHasExactlyMinimumWords_CallsModel() {
+    new_meeting
+    stub_claude 0 'ответ'
+    start_candidate
+
+    say 1 Собеседники 'А почему так?'
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    [ -e "$work/claude.args" ] || { echo "модель не вызвана на 3 слова"; return 1; }
+}
+
+candidate_WhenAnswerIsOneLine_NotifiesIt() {
+    new_meeting
+    stub_claude 0 'Да, через outbox'
+    start_candidate
+
+    say 1 Собеседники 'Вы использовали outbox раньше?'
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    wait_file_text "$work/notify.all" 'Да, через outbox' || return 1
+}
+
+candidate_WhenModelFails_ShowsReasonInWindowAndJournal() {
+    new_meeting
+    stub_claude 0 'ответ'
+    printf '#!/usr/bin/env bash\ncat > /dev/null\necho "Invalid API key" >&2\nexit 1\n' > "$work/claude"
+    start_candidate
+
+    say 1 Собеседники 'Расскажите о своём опыте с Kafka.'
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    grep -qF '(модель не ответила: Invalid API key' "$meeting/candidate.md" || { cat "$meeting/candidate.md"; return 1; }
+    grep -qF '(модель не ответила: Invalid API key' "$work/candidate.out" || { cat "$work/candidate.out"; return 1; }
+}
+
+# Закрытое окно рвёт терминал: script(1) даёт окну свой псевдотерминал, убитый script — закрытое окно.
+candidate_WhenWindowClosed_StopsCallingModel() {
+    new_meeting
+    stub_claude 0 'ответ'
+    : > "$meeting/transcript.md"
+    : > "$meeting/events.log"
+    MEETING_CLAUDE="$work/claude" PATH="$work/stub-ps-many:$PATH" \
+        script -qfc "bash '$bin/candidate-window' '$meeting' '$work/claude'" /dev/null > /dev/null 2>&1 &
+    local window=$!
+    sleep 2
+
+    kill -9 "$window"
+    wait "$window" 2> /dev/null
+    sleep 1
+    say 1 Собеседники 'Расскажите о своём опыте с Kafka.'
+    sleep 2
+
+    [ ! -e "$work/claude.args" ] || { echo "модель вызвана после закрытия окна"; return 1; }
 }
 
 candidate_WhenNoModeJson_UsesOpus() {
