@@ -14,7 +14,7 @@ public static class SpeechErrors
 
     public const string RefineThreadsInvalidCode = "Speech.RefineThreadsInvalid";
 
-    public static Error RefineThreadsInvalid(int threads) =>
+    public static Error RefineThreadsInvalid(string? threads) =>
         new(RefineThreadsInvalidCode,
-            $"Число потоков уточнения — от 1, задано {threads}: {SpeechOptions.Section}:{nameof(SpeechOptions.RefineThreads)}.");
+            $"Число потоков уточнения — целое от 1, задано «{threads}»: {SpeechOptions.Section}:{nameof(SpeechOptions.RefineThreads)}.");
 }

@@ -38,7 +38,7 @@ public sealed class SettingsValidationTests
     [InlineData(null, -1, nameof(SpeechOptions.RecognizerThreads))]
     public void Speech_WhenSettingInvalid_FailsNamingSetting(string? modelsDirectory, int threads, string setting)
     {
-        var options = new SpeechOptions { ModelsDirectory = modelsDirectory ?? Models.Directory, RecognizerThreads = threads, RefineThreads = 4 };
+        var options = new SpeechOptions { ModelsDirectory = modelsDirectory ?? Models.Directory, RecognizerThreads = threads, RefineThreads = "4" };
 
         ValidateOptionsResult result = new SpeechOptionsValidator().Validate(null, options);
 
@@ -46,26 +46,22 @@ public sealed class SettingsValidationTests
         result.FailureMessage.ShouldNotBeNull().ShouldContain($"{SpeechOptions.Section}:{setting}");
     }
 
-    [Fact]
-    public void Speech_WhenRefineThreadsInvalid_RecordingStillValid()
-    {
-        var options = new SpeechOptions { ModelsDirectory = Models.Directory, RecognizerThreads = 2, RefineThreads = 0 };
-
-        ValidateOptionsResult result = new SpeechOptionsValidator().Validate(null, options);
-
-        result.Succeeded.ShouldBeTrue();
-    }
-
-    [Fact]
-    public async Task Refine_WhenRefineThreadsInvalid_RefusesAsThreadsInvalid()
+    // Запись от настройки уточнения не зависит: даже нечисловое значение не роняет проверку настроек на старте, а
+    // уточнение из того же контейнера отказывает своим кодом.
+    [Theory]
+    [InlineData("0")]
+    [InlineData("four")]
+    public async Task Speech_WhenRefineThreadsInvalid_StartValidAndRefineRefuses(string threads)
     {
         await using ServiceProvider provider = Build(new Dictionary<string, string?>
         {
+            [$"{StorageOptions.Section}:{nameof(StorageOptions.MeetingsRoot)}"] = Path.GetTempPath(),
             [$"{SpeechOptions.Section}:{nameof(SpeechOptions.ModelsDirectory)}"] = Models.Directory,
             [$"{SpeechOptions.Section}:{nameof(SpeechOptions.RecognizerThreads)}"] = "2",
-            [$"{SpeechOptions.Section}:{nameof(SpeechOptions.RefineThreads)}"] = "0",
+            [$"{SpeechOptions.Section}:{nameof(SpeechOptions.RefineThreads)}"] = threads,
         });
 
+        Should.NotThrow(() => provider.GetRequiredService<IStartupValidator>().Validate());
         Result prepared = await provider.GetRequiredService<IRefineRecognizer>().Prepare(TestContext.Current.CancellationToken);
 
         prepared.Error.Code.ShouldBe(SpeechErrors.RefineThreadsInvalidCode);

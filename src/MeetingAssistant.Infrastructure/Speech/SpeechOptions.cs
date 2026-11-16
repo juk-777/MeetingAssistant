@@ -17,10 +17,10 @@ public sealed class SpeechOptions
     public required int RecognizerThreads { get; init; }
 
     /// <summary>
-    /// Потоки Whisper при уточнении встречи: не больше половины логических процессоров. Проверяет уточнение, а не
-    /// старт: запись от этой настройки не зависит.
+    /// Потоки Whisper при уточнении встречи: не больше половины логических процессоров. Строкой и без проверки на
+    /// старте: разбирает и проверяет уточнение, запись от этой настройки не зависит — даже от нечислового значения.
     /// </summary>
-    public required int RefineThreads { get; init; }
+    public string? RefineThreads { get; init; }
 }
 
 /// <summary>

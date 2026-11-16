@@ -17,7 +17,7 @@ public sealed class WhisperRefineRecognizerTests
     public async Task Recognize_WhenPreparedAndExampleSpeech_ReturnsRussianSegmentsWithinTheSpeech()
     {
         Models.EnsureWhisperTinyPresent();
-        await using var recognizer = new WhisperRefineRecognizer(Models.WhisperTiny, 4);
+        await using var recognizer = new WhisperRefineRecognizer(Models.WhisperTiny, "4");
         float[] example = Models.ReadExample();
 
         Result prepared = await recognizer.Prepare(Token);
@@ -36,7 +36,7 @@ public sealed class WhisperRefineRecognizerTests
     [Fact]
     public async Task Prepare_WhenModelMissing_RefusesAsModelMissing()
     {
-        await using var recognizer = new WhisperRefineRecognizer(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.bin"), 4);
+        await using var recognizer = new WhisperRefineRecognizer(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.bin"), "4");
 
         Result prepared = await recognizer.Prepare(Token);
 
@@ -56,17 +56,21 @@ public sealed class WhisperRefineRecognizerTests
     [Fact]
     public async Task Threads_WhenSettingBelowHalfOfProcessors_TakesSetting()
     {
-        await using var recognizer = new WhisperRefineRecognizer(Models.WhisperTiny, 1);
+        await using var recognizer = new WhisperRefineRecognizer(Models.WhisperTiny, "1");
 
         recognizer.Threads.ShouldBe(1);
     }
 
+    // Модели по пути нет: проверка потоков после загрузки модели отказала бы как ModelMissing.
     [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    public async Task Prepare_WhenThreadsBelowOne_RefusesAsThreadsInvalid(int threads)
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("four")]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task Prepare_WhenThreadsNotPositiveInteger_RefusesAsThreadsInvalidBeforeModel(string? threads)
     {
-        await using var recognizer = new WhisperRefineRecognizer(Models.WhisperTiny, threads);
+        await using var recognizer = new WhisperRefineRecognizer(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.bin"), threads);
 
         Result prepared = await recognizer.Prepare(Token);
 
@@ -76,7 +80,7 @@ public sealed class WhisperRefineRecognizerTests
     [Fact]
     public async Task Recognize_WhenNotPrepared_Throws()
     {
-        await using var recognizer = new WhisperRefineRecognizer(Models.WhisperTiny, 4);
+        await using var recognizer = new WhisperRefineRecognizer(Models.WhisperTiny, "4");
 
         await Should.ThrowAsync<InvalidOperationException>(recognizer.Recognize(new float[16_000], Token));
     }

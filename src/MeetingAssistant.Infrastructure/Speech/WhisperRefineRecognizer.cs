@@ -1,3 +1,4 @@
+using System.Globalization;
 using MeetingAssistant.Application.Meetings.Refine;
 using MeetingAssistant.SharedKernel;
 using Whisper.net;
@@ -14,19 +15,28 @@ namespace MeetingAssistant.Infrastructure.Speech;
 /// встреча, и отказ по ней не ждёт загрузки 574 МБ. Вызывается одним потоком сценария.
 /// </remarks>
 /// <param name="modelPath">Файл модели ggml.</param>
-/// <param name="configuredThreads">Настройка <c>Speech:RefineThreads</c>.</param>
-internal sealed class WhisperRefineRecognizer(string modelPath, int configuredThreads)
+/// <param name="configuredThreads">
+/// Настройка <c>Speech:RefineThreads</c> как есть: разбирается здесь, а не биндером настроек — опечатка в ней
+/// отказывает уточнению, а не всем командам приложения.
+/// </param>
+internal sealed class WhisperRefineRecognizer(string modelPath, string? configuredThreads)
     : IRefineRecognizer, IAsyncDisposable
 {
     public const string Language = "ru";
+
+    private readonly int? _threads =
+        int.TryParse(configuredThreads, NumberStyles.None, CultureInfo.InvariantCulture, out int threads) && threads >= 1
+            ? threads
+            : null;
 
     private WhisperFactory? _factory;
     private WhisperProcessor? _processor;
 
     /// <summary>
     /// Потоки Whisper: уточнение идёт после встречи и не держит больше половины машины, даже если настройка выше.
+    /// Настройка негодна — <see cref="Prepare"/> откажет раньше, чем потоки понадобятся.
     /// </summary>
-    public int Threads => ThreadsFor(configuredThreads, Environment.ProcessorCount);
+    public int Threads => ThreadsFor(_threads ?? 1, Environment.ProcessorCount);
 
     public static int ThreadsFor(int configuredThreads, int processorCount) =>
         Math.Min(configuredThreads, Math.Max(1, processorCount / 2));
@@ -43,7 +53,7 @@ internal sealed class WhisperRefineRecognizer(string modelPath, int configuredTh
             return Task.FromResult(Result.Success());
         }
 
-        if (configuredThreads < 1)
+        if (_threads is null)
         {
             return Task.FromResult(Result.Failure(SpeechErrors.RefineThreadsInvalid(configuredThreads)));
         }
