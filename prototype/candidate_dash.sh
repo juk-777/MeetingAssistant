@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Молчание окна кандидата: отвечает ли модель ровно «-», когда отвечать не на что, и по-русски ли отвечает на вопрос.
-# Запрос собирает сам `meeting-candidate` скилла (двойник `claude` сохраняет его), а настоящая модель зовётся тем же
-# вызовом, что в окне, — так стенд меряет текущую редакцию запроса.
+# Каждый прогон — `meeting-candidate` скилла с настоящей моделью на новой встрече: в транскрипт пишутся строки случая,
+# ответ берётся из журнала окна (candidate.md). Так стенд меряет текущую редакцию запроса и вызова целиком.
 #
-# candidate_dash.sh <модель> <прогонов на случай>
+# candidate_dash.sh <модель> <прогонов на случай> [каталог скриптов скилла]
+# Каталог скриптов — для сравнения с другой редакцией (`git archive` прошлого коммита); по умолчанию — рабочая копия.
 # В stderr — первая строка каждого ответа не «-»: пояснение вместо молчания счётчик не отличает от ответа.
 # Случаи — синтетика, не из встречи: запись — моно-смесь, и последняя реплика «Собеседников» — речь кандидата,
 # оборванная (cut), законченная (own) или с заминкой (hesitation); ожидается «-». Контроль (question) — явный вопрос
@@ -14,34 +15,35 @@ export LC_ALL=C.UTF-8
 model=$1
 runs=$2
 repo=$(cd "$(dirname "$0")/.." && pwd)
-scripts="$repo/plugins/meeting/skills/meeting/scripts"
+scripts=${3:-$repo/plugins/meeting/skills/meeting/scripts}
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+mkdir "$work/bin"
+ln -s "$(command -v claude)" "$work/bin/claude"
+quiet_path="$work/bin:/usr/bin:/bin"
 
-# Двойник `claude`: сохраняет запрос и отвечает пустым потоком.
-cat > "$work/claude" <<EOF
-#!/usr/bin/env bash
-cat > "$work/prompt.\$\$"
-EOF
-chmod +x "$work/claude"
-
-# prompt_for <файл транскрипта>: запрос окна на последнюю реплику транскрипта.
-prompt_for() {
+# answer_for <файл транскрипта>: ответ окна на последнюю реплику, «-» — если окно промолчало.
+answer_for() {
     local meeting="$work/meeting"
-    rm -rf "$meeting" "$work"/prompt.*
+    rm -rf "$meeting"
     mkdir -p "$meeting"
     : > "$meeting/transcript.md"
     : > "$meeting/events.log"
     printf '{"mode": "candidate", "model": "%s"}\n' "$model" > "$meeting/mode.json"
-    MEETING_CLAUDE="$work/claude" bash "$scripts/meeting-candidate" "$meeting" > /dev/null 2>&1 &
+    # Без уведомлений: окно шлёт их через powershell.exe (WSL) или notify-send — стенду они не нужны.
+    PATH=$quiet_path bash "$scripts/meeting-candidate" "$meeting" > /dev/null 2>&1 &
     local candidate=$!
     sleep 0.5
     cat "$1" >> "$meeting/transcript.md"
-    until compgen -G "$work/prompt.*" > /dev/null; do sleep 0.1; done
-    sleep 0.2
+    local deadline=$((SECONDS + 120))
+    until grep -q '^## ' "$meeting/candidate.md" 2> /dev/null; do
+        [ $SECONDS -lt $deadline ] || { echo "ответа нет за 120 с" >&2; break; }
+        sleep 0.2
+    done
     printf '1.0\t1\tконец записи\n' >> "$meeting/events.log"
     wait "$candidate"
-    cat "$work"/prompt.*
+    # Тело блока журнала: «(нет ответа)» пишется на «-».
+    awk 'NR > 2' "$meeting/candidate.md" | sed '/^$/d' | sed 's/^(нет ответа)$/-/'
 }
 
 # Моно-смесь: обе стороны — «Собеседники», фразы длинные, вопрос и ответ сливаются в одну строку.
@@ -56,12 +58,10 @@ printf '%s\n%s\n' "$context" '5	5.0	[00:01:05] Собеседники: Хоро�
 
 echo "$(claude --version), модель $model, effort low"
 for case in cut own hesitation question; do
-    prompt_for "$work/$case.md" > "$work/$case.prompt"
     dash=0
     english=0
     for run in $(seq "$runs"); do
-        answer=$(claude -p --model "$model" --effort low --tools "" --strict-mcp-config --setting-sources "" \
-            --disable-slash-commands --no-session-persistence < "$work/$case.prompt" 2> /dev/null)
+        answer=$(answer_for "$work/$case.md")
         [ "$answer" != "-" ] || dash=$((dash + 1))
         # По-английски — латиницы в ответе больше, чем кириллицы (термины латиницей в русском ответе допустимы).
         cyr=$(printf '%s' "$answer" | grep -oP '\p{Cyrillic}' | wc -l)

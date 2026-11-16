@@ -1595,8 +1595,9 @@ release_WhenTagIsNotVersion_Refuses() {
     done
 }
 
-# stub_claude <пауза> <куски ответа…>: двойник `claude -p` — запрос (stdin) и аргументы пишет в claude.prompt и
-# claude.args, ответ отдаёт строками stream-json по куску с паузой перед каждым. Кусок — уже в виде JSON-строки.
+# stub_claude <пауза> <куски ответа…>: двойник `claude -p` — запрос (stdin), аргументы и системный промпт пишет в
+# claude.prompt, claude.args и claude.system, ответ отдаёт строками stream-json по куску с паузой перед каждым. Кусок —
+# уже в виде JSON-строки.
 stub_claude() {
     local pause=$1 part
     shift
@@ -1606,6 +1607,10 @@ stub_claude() {
 #!/usr/bin/env bash
 cat > "$work/claude.prompt"
 printf '%s\n' "\$*" >> "$work/claude.args"
+while [ \$# -gt 0 ]; do
+    [ "\$1" != --system-prompt-file ] || cp "\$2" "$work/claude.system"
+    shift
+done
 while IFS= read -r part; do
     sleep $pause
     printf '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"%s"}}}\n' "\$part"
@@ -1613,7 +1618,7 @@ done < "$work/claude.parts"
 printf '{"type":"result","subtype":"success"}\n'
 EOF
     chmod +x "$work/claude"
-    rm -f "$work/claude.args" "$work/claude.prompt"
+    rm -f "$work/claude.args" "$work/claude.prompt" "$work/claude.system"
     # Уведомление — заглушкой powershell.exe, которая копит тексты: видно, сколько их было. Как настоящий
     # powershell.exe, она читает свой stdin: унаследованный поток ответа она бы съела.
     mkdir -p "$work/stub-ps-many"
@@ -1744,8 +1749,8 @@ candidate_WhenModeAndNotesGiven_PassesModelContextAndNotes() {
 
     expect_exit "$candidate_pid" 0 || return 1
     grep -q -- '--model sonnet --effort low' "$work/claude.args" || { cat "$work/claude.args"; return 1; }
-    grep -qF 'Контекст собеседования: системный "дизайн"' "$work/claude.prompt" || { cat "$work/claude.prompt"; return 1; }
-    grep -qF 'Пять лет на .NET' "$work/claude.prompt" || { cat "$work/claude.prompt"; return 1; }
+    grep -qF 'Контекст собеседования: системный "дизайн"' "$work/claude.system" || { cat "$work/claude.system"; return 1; }
+    grep -qF 'Пять лет на .NET' "$work/claude.system" || { cat "$work/claude.system"; return 1; }
     grep -qF 'Последняя реплика интервьюера: Расскажите о своём опыте с .NET' "$work/claude.prompt" ||
         { cat "$work/claude.prompt"; return 1; }
 }
