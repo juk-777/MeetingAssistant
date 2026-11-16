@@ -16,6 +16,7 @@ internal sealed class SileroVoiceActivityDetectorFactory(IOptions<SpeechOptions>
     public const float MinSilenceSeconds = 0.5f;
     public const float MinSpeechSeconds = 0.25f;
 
+    // Порог, а не предел: дольше него детектор режет фразу на первой короткой паузе (docs/decisions.md).
     // Задаётся явно: умолчание sherpa-onnx — 5 с, и длинная реплика резалась бы на куски.
     public const float MaxSpeechSeconds = 20f;
 
