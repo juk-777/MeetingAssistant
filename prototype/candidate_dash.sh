@@ -16,6 +16,7 @@ model=$1
 runs=$2
 repo=$(cd "$(dirname "$0")/.." && pwd)
 scripts=${3:-$repo/plugins/meeting/skills/meeting/scripts}
+[ -f "$scripts/meeting-candidate" ] || { echo "Нет $scripts/meeting-candidate" >&2; exit 1; }
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir "$work/bin"
