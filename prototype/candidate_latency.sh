@@ -41,7 +41,11 @@ while IFS= read -r question; do
     written=${EPOCHREALTIME/,/.}
     printf '%s\t%s\t[00:%02d:00] Собеседники: %s\n' "$number" "$written" "$number" "$question" >> "$meeting/transcript.md"
     # Ответ дописан, когда в журнале встречи появился его блок.
-    until [ "$(grep -c '^## ' "$meeting/candidate.md" 2> /dev/null || echo 0)" -ge "$number" ]; do sleep 0.2; done
+    deadline=$((SECONDS + 120))
+    until [ "$(grep -c '^## ' "$meeting/candidate.md" 2> /dev/null || echo 0)" -ge "$number" ]; do
+        [ $SECONDS -lt $deadline ] || { echo "реплика $number: ответа нет за 120 с — $work/candidate.err" >&2; exit 1; }
+        sleep 0.2
+    done
     tail -n +"$((lines_before + 1))" "$work/out.tsv" | awk -F'\t' -v written="$written" -v n="$number" '
         seen && !first && $2 != "\\n" && $2 != "" { first = $1 }
         $2 == "\\n" && marker && !seen { seen = 1 }
