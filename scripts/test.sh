@@ -45,13 +45,16 @@ for app in $apps; do
 
     if [ $code -eq $ZERO_TESTS_EXIT_CODE ]; then
         echo "--  $(basename "$app") — нет тестов под фильтр"
-    elif [ $code -ne 0 ]; then
+    elif [ $code -ne 0 ] || [ -z "$count" ]; then
         failed=1
         # Имя и код — до вывода: упавшее нативно приложение своего вывода почти не оставляет.
-        echo "FAIL  $(basename "$app") — код $code"
+        # Без строки итога тесты приложения не шли, даже при коде 0: сумма других приложений этого не выдаст.
+        reason="код $code"
+        [ -n "$count" ] || reason="$reason, нет строки «total:»"
+        echo "FAIL  $(basename "$app") — $reason"
         printf '%s\n' "$output"
     else
-        echo "ok  $(basename "$app") — ${count:-0}"
+        echo "ok  $(basename "$app") — $count"
     fi
 done
 
