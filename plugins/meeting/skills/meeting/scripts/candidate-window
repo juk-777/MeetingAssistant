@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# То, что идёт в окне подсказок кандидату: meeting-candidate, после конца — ожидание клавиши, чтобы последний ответ
+# можно было дочитать. Окно открывает meeting-mode.
+#
+# candidate-window <каталог встречи> <путь к claude>
+set -uo pipefail
+
+[ $# -eq 2 ] || { echo "candidate-window <каталог встречи> <путь к claude>" >&2; exit 2; }
+
+here="$(cd "$(dirname "$0")" && pwd)"
+MEETING_CLAUDE=$2 bash "$here/meeting-candidate" "$1"
+read -rsn1 -p "Окно можно закрыть: любая клавиша." || true

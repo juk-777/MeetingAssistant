@@ -1760,6 +1760,122 @@ candidate_WhenNoModeJson_UsesOpus() {
     grep -q -- '--model opus --effort low' "$work/claude.args" || { cat "$work/claude.args"; return 1; }
 }
 
+# stub_mode_tools: claude для meeting-mode (в PATH) и powershell.exe, который пишет переменные окна в window.env.
+stub_mode_tools() {
+    mkdir -p "$work/stub-mode"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$work/stub-mode/claude"
+    cat > "$work/stub-mode/powershell.exe" << EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$MEETING_WINDOW_PROGRAM" "\$MEETING_WINDOW_DISTRO" "\$MEETING_WINDOW_SCRIPT" "\$MEETING_WINDOW_DIR" \
+    "\$MEETING_WINDOW_CLAUDE" > "$work/window.env"
+printf '%s\n' "\$WSLENV" > "$work/window.wslenv"
+EOF
+    chmod +x "$work/stub-mode/claude" "$work/stub-mode/powershell.exe"
+    rm -f "$work/window.env" "$work/window.wslenv"
+}
+
+mode_WhenContextNotesAndModel_WritesThemIntoMeeting() {
+    new_meeting
+    stub_mode_tools
+    printf 'Пять лет на .NET\n' > "$work/резюме.md"
+    printf 'Компания делает платежи\n' > "$work/о компании.md"
+
+    PATH="$work/stub-mode:$PATH" WSL_DISTRO_NAME=Test bash "$bin/meeting-mode" "$meeting" candidate \
+        --context 'бэкенд, "системный" дизайн \ кэш' --notes "$work/резюме.md" --notes "$work/о компании.md" \
+        --model sonnet || return 1
+
+    [ "$(bash "$bin/current-field" "$meeting/mode.json" mode)" = candidate ] || { cat "$meeting/mode.json"; return 1; }
+    [ "$(bash "$bin/current-field" "$meeting/mode.json" context)" = 'бэкенд, "системный" дизайн \ кэш' ] ||
+        { cat "$meeting/mode.json"; return 1; }
+    [ "$(bash "$bin/current-field" "$meeting/mode.json" model)" = sonnet ] || { cat "$meeting/mode.json"; return 1; }
+    local expected
+    expected=$(printf '# резюме.md\n\nПять лет на .NET\n\n\n# о компании.md\n\nКомпания делает платежи')
+    [ "$(cat "$meeting/notes.md")" = "$expected" ] || { cat "$meeting/notes.md"; return 1; }
+}
+
+mode_WhenNoOptions_WritesOpusAndNoNotes() {
+    new_meeting
+    stub_mode_tools
+    printf 'старые заметки\n' > "$meeting/notes.md"
+
+    PATH="$work/stub-mode:$PATH" WSL_DISTRO_NAME=Test bash "$bin/meeting-mode" "$meeting" candidate || return 1
+
+    [ "$(bash "$bin/current-field" "$meeting/mode.json" model)" = opus ] || { cat "$meeting/mode.json"; return 1; }
+    [ "$(bash "$bin/current-field" "$meeting/mode.json" context)" = "" ] || { cat "$meeting/mode.json"; return 1; }
+    [ ! -e "$meeting/notes.md" ] || { echo "notes.md остался"; return 1; }
+}
+
+mode_WhenUnknownModeOrMissingNotes_RefusesWithoutWriting() {
+    new_meeting
+    stub_mode_tools
+    if PATH="$work/stub-mode:$PATH" bash "$bin/meeting-mode" "$meeting" interviewer 2> /dev/null; then
+        echo "режим interviewer принят"
+        return 1
+    fi
+    if PATH="$work/stub-mode:$PATH" bash "$bin/meeting-mode" "$meeting" candidate --notes "$work/нет.md" 2> /dev/null; then
+        echo "нет заметок — принято"
+        return 1
+    fi
+    [ ! -e "$meeting/mode.json" ] || { cat "$meeting/mode.json"; return 1; }
+    [ ! -e "$work/window.env" ] || { echo "окно открыто"; return 1; }
+}
+
+mode_WhenInWsl_OpensWindowInSameDistroWithMeetingAndClaude() {
+    new_meeting
+    stub_mode_tools
+
+    PATH="$work/stub-mode:$PATH" WSL_DISTRO_NAME='Ubuntu Test' WSLENV=USERPROFILE/p \
+        bash "$bin/meeting-mode" "$meeting" candidate || return 1
+
+    local expected
+    expected=$(printf '%s\n' wsl.exe 'Ubuntu Test' "$bin/candidate-window" "$meeting" "$work/stub-mode/claude")
+    [ "$(cat "$work/window.env")" = "$expected" ] || { cat "$work/window.env"; return 1; }
+    grep -q '^USERPROFILE/p:MEETING_WINDOW_PROGRAM:' "$work/window.wslenv" || { cat "$work/window.wslenv"; return 1; }
+}
+
+modegitbash_WhenInGitBash_OpensGitBashWindowWithWindowsPaths() {
+    new_meeting
+    stub_mode_tools
+
+    PATH="$work/stub-mode:$PATH" bash "$bin/meeting-mode" "$meeting" candidate || return 1
+
+    local expected
+    expected=$(printf '%s\n' "$(cygpath -w "$(command -v bash)")" '' "$(cygpath -w "$bin/candidate-window")" \
+        "$(cygpath -w "$meeting")" "$(cygpath -w "$work/stub-mode/claude")")
+    [ "$(cat "$work/window.env")" = "$expected" ] || { cat "$work/window.env"; return 1; }
+}
+
+linuxmode_WhenTerminalPresent_OpensCandidateWindowWithMeetingAndClaude() {
+    home=$(mktemp -d "$work/home.XXXX")
+    new_meeting
+    mkdir -p "$work/stub-lmode"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$work/stub-lmode/claude"
+    printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s/terminal.args"\n' "$work" > "$work/stub-lmode/xterm"
+    chmod +x "$work/stub-lmode/claude" "$work/stub-lmode/xterm"
+    rm -f "$work/terminal.args"
+
+    linux_skill "$work/stub-lmode" meeting-mode "$meeting" candidate || return 1
+
+    local expected
+    expected=$(printf '%s\n' -e bash -c 'bash "$1" "$2" "$3"' подсказки "$bin/candidate-window" "$meeting" \
+        "$work/stub-lmode/claude")
+    [ "$(cat "$work/terminal.args")" = "$expected" ] || { cat "$work/terminal.args"; return 1; }
+}
+
+linuxmode_WhenNoTerminal_RefusesWithCommandToRun() {
+    home=$(mktemp -d "$work/home.XXXX")
+    new_meeting
+    mkdir -p "$work/stub-lmode-none"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$work/stub-lmode-none/claude"
+    chmod +x "$work/stub-lmode-none/claude"
+
+    if linux_skill "$work/stub-lmode-none" meeting-mode "$meeting" candidate 2> "$work/mode.err"; then
+        echo "отказа нет"
+        return 1
+    fi
+    grep -qF "$bin/candidate-window" "$work/mode.err" || { cat "$work/mode.err"; return 1; }
+}
+
 for test in $(declare -F | awk '{ print $3 }' | grep -E '^[a-z]+_When'); do
     run "$test"
 done

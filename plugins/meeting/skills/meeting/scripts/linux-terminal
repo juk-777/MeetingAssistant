@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Новое окно эмулятора терминала Linux: в нём `bash -c <команда>` с позиционными параметрами. Зовут linux-window
+# (окно приложения записи) и meeting-mode (окно подсказок кандидату).
+#
+# Параметры уходят окну позиционными параметрами bash -c, а не текстом команды: кавычки и $ в них не исполняются.
+# Переменные окружения окну не передать: эмулятор может открыть окно своим сервером (gnome-terminal) с его окружением.
+#
+# Эмулятор — по списку ниже. Эмулятор, который отказал на старте, пропускается, и пробуется следующий: поставщик
+# x-terminal-emulator может не знать -e (Ptyxis в Ubuntu 26.04 — так).
+#
+# Код 0 — окно открылось. 1 — ни один эмулятор не открыл окно, причина — строкой в stderr.
+#
+# linux-terminal <команда bash -c> <$0 команды> [параметры…]
+set -euo pipefail
+
+[ $# -ge 2 ] || { echo "linux-terminal <команда bash -c> <\$0 команды> [параметры…]" >&2; exit 2; }
+
+command=$1
+shift
+
+# Эмулятор и ключ, после которого идут команда и её аргументы. Первым — xdg-terminal-exec: терминал, выбранный в
+# системе, команда — аргументами без ключа. Дальше — Ptyxis (Ubuntu 26.04, Fedora), выбор системы Debian и Ubuntu,
+# эмуляторы GNOME, KDE, Xfce и xterm, который есть почти везде.
+candidates=('xdg-terminal-exec' 'ptyxis --' 'x-terminal-emulator -e' 'gnome-terminal --' 'konsole -e' 'xfce4-terminal -x' 'xterm -e')
+failed=()
+for candidate in "${candidates[@]}"; do
+    read -ra terminal <<< "$candidate"
+    command -v "${terminal[0]}" > /dev/null || continue
+
+    # Эмулятор может и вернуться сразу (gnome-terminal отдаёт окно своему серверу), и жить вместе с окном (xterm):
+    # в фоне, без потоков сессии, отказ на старте виден за секунду.
+    "${terminal[@]}" bash -c "$command" "$@" < /dev/null > /dev/null 2>&1 &
+    opener=$!
+    sleep 1
+    if kill -0 "$opener" 2> /dev/null || wait "$opener"; then
+        exit 0
+    fi
+    failed+=("${terminal[0]}")
+done
+
+if [ ${#failed[@]} -eq 0 ]; then
+    echo "Нет эмулятора терминала (${candidates[*]%% *})." >&2
+else
+    echo "Окно не открылось: ${failed[*]} вышли с ошибкой." >&2
+fi
+exit 1
