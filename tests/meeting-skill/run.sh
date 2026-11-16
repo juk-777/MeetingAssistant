@@ -141,6 +141,7 @@ skip_reason() {
             install_*) echo "install-skill.sh — путь разработчика в WSL; в Windows скилл из рабочей копии — claude --plugin-dir" ;;
             linux*_*) echo "путь Linux (install.sh, окно эмулятора терминала, notify-send); в Windows — powershell.exe" ;;
             *_WhenSkillLinked_*) echo "ссылка на скилл — путь разработчика в WSL (install-skill.sh); ln -s Git Bash копирует" ;;
+            *_WhenWindowClosed_*) echo "закрытие окна — через script(1) и псевдотерминал, в Git Bash их нет" ;;
             *) return 1 ;;
         esac
     else
@@ -1592,6 +1593,347 @@ release_WhenTagIsNotVersion_Refuses() {
             return 1
         fi
     done
+}
+
+# stub_claude <пауза> <куски ответа…>: двойник `claude -p` — запрос (stdin) и аргументы пишет в claude.prompt и
+# claude.args, ответ отдаёт строками stream-json по куску с паузой перед каждым. Кусок — уже в виде JSON-строки.
+stub_claude() {
+    local pause=$1 part
+    shift
+    : > "$work/claude.parts"
+    for part in "$@"; do printf '%s\n' "$part" >> "$work/claude.parts"; done
+    cat > "$work/claude" << EOF
+#!/usr/bin/env bash
+cat > "$work/claude.prompt"
+printf '%s\n' "\$*" >> "$work/claude.args"
+while IFS= read -r part; do
+    sleep $pause
+    printf '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"%s"}}}\n' "\$part"
+done < "$work/claude.parts"
+printf '{"type":"result","subtype":"success"}\n'
+EOF
+    chmod +x "$work/claude"
+    rm -f "$work/claude.args" "$work/claude.prompt"
+    # Уведомление — заглушкой powershell.exe, которая копит тексты: видно, сколько их было. Как настоящий
+    # powershell.exe, она читает свой stdin: унаследованный поток ответа она бы съела.
+    mkdir -p "$work/stub-ps-many"
+    printf '#!/usr/bin/env bash\ntimeout 2 cat > /dev/null\nprintf "%%s\\n" "$MEETING_NOTIFY_TEXT" >> "%s/notify.all"\n' "$work" > "$work/stub-ps-many/powershell.exe"
+    chmod +x "$work/stub-ps-many/powershell.exe"
+    rm -f "$work/notify.all"
+}
+
+# start_candidate: meeting-candidate на встрече $meeting с двойником claude; ждёт строку приветствия — строки,
+# дописанные до неё, скрипт считает прошлыми.
+start_candidate() {
+    : >> "$meeting/transcript.md"
+    : >> "$meeting/events.log"
+    MEETING_CLAUDE="$work/claude" PATH="$work/stub-ps-many:$PATH" \
+        bash "$bin/meeting-candidate" "$meeting" > "$work/candidate.out" 2>&1 &
+    candidate_pid=$!
+    watchers+=("$candidate_pid")
+    wait_lines "$work/candidate.out" 1
+}
+
+# say <номер> <Я|Собеседники> <текст>
+say() {
+    printf '%s\t1762774261.%03d\t[00:00:%02d] %s: %s\n' "$1" "$1" "$1" "$2" "$3" >> "$meeting/transcript.md"
+}
+
+# wait_file_text <файл> <текст>: ждёт, пока в файле появится текст.
+wait_file_text() {
+    local deadline=$((SECONDS + LIMIT_SECONDS))
+    until grep -qF -- "$2" "$1" 2> /dev/null || [ $SECONDS -ge $deadline ]; do sleep 0.1; done
+    grep -qF -- "$2" "$1" 2> /dev/null || { echo "нет «$2» в $(basename "$1"):"; cat "$1" 2> /dev/null; return 1; }
+}
+
+candidate_WhenInterviewerAsksWithoutQuestionMark_StreamsAnswerAndJournals() {
+    new_meeting
+    stub_claude 0.05 'Суть: опыт с Kafka' '\n- партиции \"по ключу\"' '\n- Да'
+    start_candidate
+
+    say 1 Собеседники 'Расскажите о своём опыте с Kafka.'
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    local expected
+    expected=$(printf '## [00:00:01] Расскажите о своём опыте с Kafka.\n\nСуть: опыт с Kafka\n- партиции "по ключу"\n- Да')
+    [ "$(cat "$meeting/candidate.md")" = "$expected" ] || { cat "$meeting/candidate.md"; return 1; }
+    grep -qF -- '- партиции "по ключу"' "$work/candidate.out" || { cat "$work/candidate.out"; return 1; }
+}
+
+candidate_WhenOwnOrShortUtterance_DoesNotCallModel() {
+    new_meeting
+    stub_claude 0 'ответ'
+    start_candidate
+
+    say 1 Я 'Расскажу о своём опыте с Kafka подробно'
+    say 2 Собеседники 'Да, хорошо'
+    end_of_recording 2
+
+    expect_exit "$candidate_pid" 0 || return 1
+    [ ! -e "$work/claude.args" ] || { echo "модель вызвана: $(cat "$work/claude.args")"; return 1; }
+    [ ! -e "$meeting/candidate.md" ] || { cat "$meeting/candidate.md"; return 1; }
+}
+
+candidate_WhenLinesBeforeStart_DoesNotAnswerThem() {
+    new_meeting
+    stub_claude 0 'ответ'
+    say 1 Собеседники 'Расскажите о себе подробно'
+    start_candidate
+
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    [ ! -e "$work/claude.args" ] || { echo "модель вызвана: $(cat "$work/claude.args")"; return 1; }
+}
+
+candidate_WhenNewUtteranceDuringAnswer_CancelsPreviousAnswer() {
+    new_meeting
+    stub_claude 0.6 'Суть: первая' '\n- тезис' '\n- ещё'
+    start_candidate
+
+    say 1 Собеседники 'Расскажите о своём опыте с Kafka.'
+    wait_file_text "$work/candidate.out" 'Суть: первая' || return 1
+    say 2 Собеседники 'А как вы делали партиционирование?'
+    wait_file_text "$meeting/candidate.md" '[00:00:02]' || return 1
+    end_of_recording 2
+
+    expect_exit "$candidate_pid" 0 || return 1
+    grep -qF 'Суть: первая … (прервано)' "$meeting/candidate.md" || { cat "$meeting/candidate.md"; return 1; }
+    [ "$(grep -c '^## ' "$meeting/candidate.md")" -eq 2 ] || { cat "$meeting/candidate.md"; return 1; }
+    [ "$(grep -c '' "$work/claude.args")" -eq 2 ] || { echo "вызовов: $(grep -c '' "$work/claude.args")"; return 1; }
+}
+
+candidate_WhenFirstLineComplete_NotifiesItOnce() {
+    new_meeting
+    stub_claude 0.05 'Суть: шардирование' '\n- тезис один' '\n- тезис два'
+    start_candidate
+
+    say 1 Собеседники 'Как бы вы масштабировали сервис?'
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    wait_file_text "$work/notify.all" 'Суть: шардирование' || return 1
+    sleep 0.3
+    [ "$(cat "$work/notify.all")" = "Суть: шардирование" ] || { cat "$work/notify.all"; return 1; }
+}
+
+candidate_WhenModelAnswersDash_JournalsNoAnswerWithoutNotification() {
+    new_meeting
+    stub_claude 0 '-'
+    start_candidate
+
+    say 1 Собеседники 'Подождите секунду, я найду ссылку'
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    grep -qF '(нет ответа)' "$meeting/candidate.md" || { cat "$meeting/candidate.md"; return 1; }
+    sleep 0.3
+    [ ! -e "$work/notify.all" ] || { echo "уведомление: $(cat "$work/notify.all")"; return 1; }
+}
+
+candidate_WhenModeAndNotesGiven_PassesModelContextAndNotes() {
+    new_meeting
+    stub_claude 0 'ответ'
+    printf '{"mode": "candidate", "context": "системный \\"дизайн\\"", "model": "sonnet"}' > "$meeting/mode.json"
+    printf '# резюме.md\n\nПять лет на .NET\n' > "$meeting/notes.md"
+    start_candidate
+
+    say 1 Собеседники 'Расскажите о своём опыте с .NET'
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    grep -q -- '--model sonnet --effort low' "$work/claude.args" || { cat "$work/claude.args"; return 1; }
+    grep -qF 'Контекст собеседования: системный "дизайн"' "$work/claude.prompt" || { cat "$work/claude.prompt"; return 1; }
+    grep -qF 'Пять лет на .NET' "$work/claude.prompt" || { cat "$work/claude.prompt"; return 1; }
+    grep -qF 'Последняя реплика интервьюера: Расскажите о своём опыте с .NET' "$work/claude.prompt" ||
+        { cat "$work/claude.prompt"; return 1; }
+}
+
+candidate_WhenUtteranceHasExactlyMinimumWords_CallsModel() {
+    new_meeting
+    stub_claude 0 'ответ'
+    start_candidate
+
+    say 1 Собеседники 'А почему так?'
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    [ -e "$work/claude.args" ] || { echo "модель не вызвана на 3 слова"; return 1; }
+}
+
+candidate_WhenAnswerIsOneLine_NotifiesIt() {
+    new_meeting
+    stub_claude 0 'Да, через outbox'
+    start_candidate
+
+    say 1 Собеседники 'Вы использовали outbox раньше?'
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    wait_file_text "$work/notify.all" 'Да, через outbox' || return 1
+}
+
+candidate_WhenModelFails_ShowsReasonInWindowAndJournal() {
+    new_meeting
+    stub_claude 0 'ответ'
+    printf '#!/usr/bin/env bash\ncat > /dev/null\necho "Invalid API key" >&2\nexit 1\n' > "$work/claude"
+    start_candidate
+
+    say 1 Собеседники 'Расскажите о своём опыте с Kafka.'
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    grep -qF '(модель не ответила: Invalid API key' "$meeting/candidate.md" || { cat "$meeting/candidate.md"; return 1; }
+    grep -qF '(модель не ответила: Invalid API key' "$work/candidate.out" || { cat "$work/candidate.out"; return 1; }
+}
+
+# Закрытое окно рвёт терминал: script(1) даёт окну свой псевдотерминал, убитый script — закрытое окно.
+candidate_WhenWindowClosed_StopsCallingModel() {
+    new_meeting
+    stub_claude 0 'ответ'
+    : > "$meeting/transcript.md"
+    : > "$meeting/events.log"
+    MEETING_CLAUDE="$work/claude" PATH="$work/stub-ps-many:$PATH" \
+        script -qfc "bash '$bin/candidate-window' '$meeting' '$work/claude'" /dev/null > /dev/null 2>&1 &
+    local window=$!
+    sleep 2
+
+    kill -9 "$window"
+    wait "$window" 2> /dev/null
+    sleep 1
+    say 1 Собеседники 'Расскажите о своём опыте с Kafka.'
+    sleep 2
+
+    [ ! -e "$work/claude.args" ] || { echo "модель вызвана после закрытия окна"; return 1; }
+}
+
+candidate_WhenNoModeJson_UsesOpus() {
+    new_meeting
+    stub_claude 0 'ответ'
+    start_candidate
+
+    say 1 Собеседники 'Расскажите о своём опыте с .NET'
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    grep -q -- '--model opus --effort low' "$work/claude.args" || { cat "$work/claude.args"; return 1; }
+}
+
+# stub_mode_tools: claude для meeting-mode (в PATH) и powershell.exe, который пишет переменные окна в window.env.
+stub_mode_tools() {
+    mkdir -p "$work/stub-mode"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$work/stub-mode/claude"
+    cat > "$work/stub-mode/powershell.exe" << EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$MEETING_WINDOW_PROGRAM" "\$MEETING_WINDOW_DISTRO" "\$MEETING_WINDOW_SCRIPT" "\$MEETING_WINDOW_DIR" \
+    "\$MEETING_WINDOW_CLAUDE" > "$work/window.env"
+printf '%s\n' "\$WSLENV" > "$work/window.wslenv"
+EOF
+    chmod +x "$work/stub-mode/claude" "$work/stub-mode/powershell.exe"
+    rm -f "$work/window.env" "$work/window.wslenv"
+}
+
+mode_WhenContextNotesAndModel_WritesThemIntoMeeting() {
+    new_meeting
+    stub_mode_tools
+    printf 'Пять лет на .NET\n' > "$work/резюме.md"
+    printf 'Компания делает платежи\n' > "$work/о компании.md"
+
+    PATH="$work/stub-mode:$PATH" WSL_DISTRO_NAME=Test bash "$bin/meeting-mode" "$meeting" candidate \
+        --context 'бэкенд, "системный" дизайн \ кэш' --notes "$work/резюме.md" --notes "$work/о компании.md" \
+        --model sonnet || return 1
+
+    [ "$(bash "$bin/current-field" "$meeting/mode.json" mode)" = candidate ] || { cat "$meeting/mode.json"; return 1; }
+    [ "$(bash "$bin/current-field" "$meeting/mode.json" context)" = 'бэкенд, "системный" дизайн \ кэш' ] ||
+        { cat "$meeting/mode.json"; return 1; }
+    [ "$(bash "$bin/current-field" "$meeting/mode.json" model)" = sonnet ] || { cat "$meeting/mode.json"; return 1; }
+    local expected
+    expected=$(printf '# резюме.md\n\nПять лет на .NET\n\n\n# о компании.md\n\nКомпания делает платежи')
+    [ "$(cat "$meeting/notes.md")" = "$expected" ] || { cat "$meeting/notes.md"; return 1; }
+}
+
+mode_WhenNoOptions_WritesOpusAndNoNotes() {
+    new_meeting
+    stub_mode_tools
+    printf 'старые заметки\n' > "$meeting/notes.md"
+
+    PATH="$work/stub-mode:$PATH" WSL_DISTRO_NAME=Test bash "$bin/meeting-mode" "$meeting" candidate || return 1
+
+    [ "$(bash "$bin/current-field" "$meeting/mode.json" model)" = opus ] || { cat "$meeting/mode.json"; return 1; }
+    [ "$(bash "$bin/current-field" "$meeting/mode.json" context)" = "" ] || { cat "$meeting/mode.json"; return 1; }
+    [ ! -e "$meeting/notes.md" ] || { echo "notes.md остался"; return 1; }
+}
+
+mode_WhenUnknownModeOrMissingNotes_RefusesWithoutWriting() {
+    new_meeting
+    stub_mode_tools
+    if PATH="$work/stub-mode:$PATH" bash "$bin/meeting-mode" "$meeting" interviewer 2> /dev/null; then
+        echo "режим interviewer принят"
+        return 1
+    fi
+    if PATH="$work/stub-mode:$PATH" bash "$bin/meeting-mode" "$meeting" candidate --notes "$work/нет.md" 2> /dev/null; then
+        echo "нет заметок — принято"
+        return 1
+    fi
+    [ ! -e "$meeting/mode.json" ] || { cat "$meeting/mode.json"; return 1; }
+    [ ! -e "$work/window.env" ] || { echo "окно открыто"; return 1; }
+}
+
+mode_WhenInWsl_OpensWindowInSameDistroWithMeetingAndClaude() {
+    new_meeting
+    stub_mode_tools
+
+    PATH="$work/stub-mode:$PATH" WSL_DISTRO_NAME='Ubuntu-24.04' WSLENV=USERPROFILE/p \
+        bash "$bin/meeting-mode" "$meeting" candidate || return 1
+
+    local expected
+    expected=$(printf '%s\n' wsl.exe 'Ubuntu-24.04' "$bin/candidate-window" "$meeting" "$work/stub-mode/claude")
+    [ "$(cat "$work/window.env")" = "$expected" ] || { cat "$work/window.env"; return 1; }
+    grep -q '^USERPROFILE/p:MEETING_WINDOW_PROGRAM:' "$work/window.wslenv" || { cat "$work/window.wslenv"; return 1; }
+}
+
+modegitbash_WhenInGitBash_OpensGitBashWindowWithWindowsPaths() {
+    new_meeting
+    stub_mode_tools
+
+    PATH="$work/stub-mode:$PATH" bash "$bin/meeting-mode" "$meeting" candidate || return 1
+
+    local expected
+    expected=$(printf '%s\n' "$(cygpath -w "$(command -v bash)")" '' "$(cygpath -w "$bin/candidate-window")" \
+        "$(cygpath -w "$meeting")" "$(cygpath -w "$work/stub-mode/claude")")
+    [ "$(cat "$work/window.env")" = "$expected" ] || { cat "$work/window.env"; return 1; }
+}
+
+linuxmode_WhenTerminalPresent_OpensCandidateWindowWithMeetingAndClaude() {
+    home=$(mktemp -d "$work/home.XXXX")
+    new_meeting
+    mkdir -p "$work/stub-lmode"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$work/stub-lmode/claude"
+    printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s/terminal.args"\n' "$work" > "$work/stub-lmode/xterm"
+    chmod +x "$work/stub-lmode/claude" "$work/stub-lmode/xterm"
+    rm -f "$work/terminal.args"
+
+    linux_skill "$work/stub-lmode" meeting-mode "$meeting" candidate || return 1
+
+    local expected
+    expected=$(printf '%s\n' -e bash -c 'bash "$1" "$2" "$3"' подсказки "$bin/candidate-window" "$meeting" \
+        "$work/stub-lmode/claude")
+    [ "$(cat "$work/terminal.args")" = "$expected" ] || { cat "$work/terminal.args"; return 1; }
+}
+
+linuxmode_WhenNoTerminal_RefusesWithCommandToRun() {
+    home=$(mktemp -d "$work/home.XXXX")
+    new_meeting
+    mkdir -p "$work/stub-lmode-none"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$work/stub-lmode-none/claude"
+    chmod +x "$work/stub-lmode-none/claude"
+
+    if linux_skill "$work/stub-lmode-none" meeting-mode "$meeting" candidate 2> "$work/mode.err"; then
+        echo "отказа нет"
+        return 1
+    fi
+    grep -qF "$bin/candidate-window" "$work/mode.err" || { cat "$work/mode.err"; return 1; }
 }
 
 for test in $(declare -F | awk '{ print $3 }' | grep -E '^[a-z]+_When'); do

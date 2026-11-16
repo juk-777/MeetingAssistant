@@ -1,0 +1,252 @@
+#!/usr/bin/env bash
+# Быстрая подсказка кандидату (режим собеседования, роль кандидата): на каждую реплику «Собеседников» от трёх слов —
+# один вызов модели без сессии, ответ печатается в это окно по мере прихода.
+#
+# Почему не сессия /meeting: её подсказка — ход агента, около 10 с после события; отдельный вызов `claude -p` без
+# инструментов, MCP и настроек даёт первую строку через 1–2 с (docs/specs/2026-11-16-interview-mode.md). Повод — не
+# событие `вопрос`, а любая реплика собеседников: задание без «?» («Расскажите о …») правило вопроса не ловит, а
+# отвечать ли, решает модель — ответ «-» значит «не на что».
+#
+# Новая реплика собеседников обрывает недописанный ответ на прошлую: интервьюер продолжил, и прошлый ответ устарел.
+# Первая дописанная строка ответа уходит во всплывающее уведомление (meeting-notify) — на собеседовании в фокусе окно
+# звонка. Каждый ответ пишется в candidate.md каталога встречи.
+#
+# Режим, контекст и модель — mode.json встречи, заметки — notes.md (пишет meeting-mode). `claude` — из переменной
+# MEETING_CLAUDE, иначе из PATH. Строки транскрипта до запуска не разбираются. Скрипт выходит после конца записи.
+#
+# meeting-candidate <каталог встречи>
+set -uo pipefail
+
+MIN_WORDS=3
+CONTEXT_LINES=30
+NOTES_LIMIT_BYTES=30000
+POLL_SECONDS=0.3
+# Сколько ждать недописанный ответ после конца записи.
+FINISH_SECONDS=60
+END_OF_RECORDING="конец записи"
+DEFAULT_MODEL=opus
+
+[ $# -eq 1 ] || { echo "meeting-candidate <каталог встречи>" >&2; exit 2; }
+[ -d "$1" ] || { echo "Нет каталога встречи: $1" >&2; exit 1; }
+
+here="$(cd "$(dirname "$0")" && pwd)"
+dir=$(cd "$1" && pwd)
+transcript="$dir/transcript.md"
+events="$dir/events.log"
+journal="$dir/candidate.md"
+claude=${MEETING_CLAUDE:-claude}
+
+context=$(bash "$here/current-field" "$dir/mode.json" context 2> /dev/null) || context=""
+model=$(bash "$here/current-field" "$dir/mode.json" model 2> /dev/null) || model=$DEFAULT_MODEL
+[ -n "$model" ] || model=$DEFAULT_MODEL
+
+work=$(mktemp -d)
+answer_pid=""
+answer_header=""
+
+finish() {
+    cancel_answer
+    rm -rf "$work"
+}
+trap finish EXIT
+trap 'exit 130' INT TERM HUP
+
+# Последнюю строку процесс записи может ещё дописывать: в счёт идут только строки с переводом строки.
+complete_lines() {
+    if [ -f "$transcript" ]; then wc -l < "$transcript"; else echo 0; fi
+}
+
+recording_ended() {
+    [ -f "$events" ] && awk -F'\t' -v end="$END_OF_RECORDING" '$3 == end { found = 1 } END { exit !found }' "$events"
+}
+
+# Текст дельт ответа из потока `--output-format stream-json`: JSON-строка поля text у text_delta, без jq — его нет в
+# Git for Windows. Кириллицу CLI пишет как есть; \uXXXX собирается в байты UTF-8, поэтому awk — в локали C.
+decode_stream() {
+    LC_ALL=C awk '
+        function hexval(s,    i, v) {
+            v = 0
+            for (i = 1; i <= length(s); i++) v = v * 16 + index("0123456789abcdef", tolower(substr(s, i, 1))) - 1
+            return v
+        }
+        function utf8(code) {
+            if (code < 128) return sprintf("%c", code)
+            if (code < 2048) return sprintf("%c%c", 192 + int(code / 64), 128 + code % 64)
+            if (code >= 55296 && code <= 57343) return ""
+            return sprintf("%c%c%c", 224 + int(code / 4096), 128 + int(code / 64) % 64, 128 + code % 64)
+        }
+        BEGIN { marker = "\"type\":\"text_delta\",\"text\":\"" }
+        {
+            start = index($0, marker)
+            if (start == 0) next
+            s = substr($0, start + length(marker))
+            out = ""
+            while (length(s) > 0) {
+                c = substr(s, 1, 1)
+                if (c == "\"") break
+                if (c == "\\") {
+                    e = substr(s, 2, 1)
+                    if (e == "u") { out = out utf8(hexval(substr(s, 3, 4))); s = substr(s, 7); continue }
+                    if (e == "n") out = out "\n"
+                    else if (e == "t") out = out "\t"
+                    else if (e != "r" && e != "b" && e != "f") out = out e
+                    s = substr(s, 3)
+                    continue
+                }
+                out = out c
+                s = substr(s, 2)
+            }
+            printf "%s", out
+            fflush()
+        }'
+}
+
+# Запрос модели: роль, контекст, заметки, последние реплики и сама реплика.
+write_prompt() {
+    local text=$1
+    {
+        echo "Ты подсказываешь кандидату на собеседовании. «Я» — кандидат, «Собеседники» — интервьюеры."
+        [ -z "$context" ] || echo "Контекст собеседования: $context"
+        if [ -s "$dir/notes.md" ]; then
+            echo
+            echo "Заметки кандидата — резюме, опыт, о компании. Вопрос об опыте — отвечай по ним:"
+            head -c "$NOTES_LIMIT_BYTES" "$dir/notes.md"
+            echo
+        fi
+        echo
+        echo "Последние реплики встречи:"
+        head -n "$(complete_lines)" "$transcript" | tail -n "$CONTEXT_LINES" | cut -f3-
+        echo
+        echo "Последняя реплика интервьюера: $text"
+        echo
+        echo "Если это вопрос или задание кандидату — ответь за кандидата: первая строка — суть ответа одной фразой, дальше 3–4 коротких тезиса строками с «- ». Без вступления и без пересказа вопроса. Если отвечать не на что (не вопрос и не задание, просьба подождать, реплика оборвана) — ответь одним символом «-»."
+    } > "$work/prompt"
+}
+
+# Ответ на одну реплику: печать по мере прихода, уведомление первой строкой, запись в журнал. Идёт в фоне.
+answer() {
+    local stamp=$1 text=$2 char line="" notified=""
+    : > "$work/answer"
+    "$claude" -p --model "$model" --effort low --tools "" --strict-mcp-config --setting-sources "" \
+        --disable-slash-commands --no-session-persistence --output-format stream-json --verbose \
+        --include-partial-messages < "$work/prompt" 2> "$work/error" |
+        decode_stream |
+        {
+            while IFS= read -r -d '' -N 1 char; do
+                printf '%s' "$char"
+                printf '%s' "$char" >> "$work/answer"
+                if [ -n "$notified" ]; then continue; fi
+                if [ "$char" = $'\n' ]; then
+                    notify "$line"
+                    notified=1
+                else
+                    line+=$char
+                fi
+            done
+            # Пустой ответ — модель не ответила (нет входа, лимит, сеть, неверная модель): причину видно, а не тишину.
+            if [ ! -s "$work/answer" ]; then
+                printf '(модель не ответила: %s)' "$(tr '\n' ' ' < "$work/error" | cut -c1-200)" | tee "$work/answer"
+            fi
+            [ -n "$notified" ] || notify "$line"
+            echo
+            journal_entry "$stamp" "$text" "$(< "$work/answer")"
+            rm -f "$work/running"
+        }
+}
+
+# Идёт ли ответ — по признаку, который ставит start_answer до запуска, а снимает сам ответ, записав журнал: конец
+# записи ждёт записанного журнала, а не процесса, и признак есть с первого мгновения, ещё до того, как фон запустился.
+answer_running() {
+    [ -e "$work/running" ]
+}
+
+# Ответ «-» — модель решила, что отвечать не на что: уведомлять нечем.
+notify() {
+    [ -n "$1" ] && [ "$1" != "-" ] || return 0
+    # Вход — /dev/null: фоновая задача может унаследовать поток ответа (так бывает при set -m), и powershell.exe
+    # съел бы его кусок.
+    bash "$here/meeting-notify" "$1" < /dev/null > /dev/null 2>&1 &
+}
+
+journal_entry() {
+    local body=$3
+    [ "$body" != "-" ] || body="(нет ответа)"
+    printf '## %s %s\n\n%s\n\n' "$1" "$2" "$body" >> "$journal"
+}
+
+cancel_answer() {
+    [ -n "$answer_pid" ] || return 0
+    if answer_running; then
+        kill -- "-$answer_pid" 2> /dev/null
+        wait "$answer_pid" 2> /dev/null
+        rm -f "$work/running"
+        echo " … (прервано)"
+        journal_entry "${answer_header%%$'\t'*}" "${answer_header#*$'\t'}" "$(cat "$work/answer" 2> /dev/null) … (прервано)"
+    else
+        wait "$answer_pid" 2> /dev/null
+    fi
+    answer_pid=""
+}
+
+start_answer() {
+    local stamp=$1 text=$2
+    cancel_answer
+    write_prompt "$text"
+    printf '\n▶ %s %s\n' "$stamp" "$text"
+    answer_header="$stamp"$'\t'"$text"
+    : > "$work/running"
+    # Ответ — своей группой процессов: обрыв гасит и вызов модели, и разбор его потока. set -m — только на запуск:
+    # с ним скрипт отдаёт терминал каждой своей задаче и выпадает из группы переднего плана, и закрытое окно его
+    # не гасит — он звал бы модель дальше без окна.
+    set -m
+    answer "$stamp" "$text" &
+    answer_pid=$!
+    set +m
+}
+
+lines_read=$(complete_lines)
+echo "Подсказки кандидату: $(basename "$dir"). Ответ — на каждую реплику собеседников; после конца записи окно можно закрыть."
+
+while true; do
+    # Конец записи — до чтения строк: процесс записи пишет строку раньше события, так что все строки до конца уже
+    # видны. В обратном порядке строка и конец, дописанные между двумя проверками, теряют последнюю реплику.
+    ended=""
+    if recording_ended; then ended=1; fi
+    count=$(complete_lines)
+    pending_stamp=""
+    pending_text=""
+    if [ "$count" -gt "$lines_read" ]; then
+        # Из нескольких новых реплик отвечается последняя: прошлые она и так видит в контексте.
+        while IFS= read -r line; do
+            content=$(printf '%s' "$line" | cut -f3-)
+            stamp=${content%% *}
+            rest=${content#* }
+            [ "${rest%%: *}" = "Собеседники" ] || continue
+            text=${rest#*: }
+            read -ra words <<< "$text"
+            [ "${#words[@]}" -ge "$MIN_WORDS" ] || continue
+            pending_stamp=$stamp
+            pending_text=$text
+        done < <(head -n "$count" "$transcript" | tail -n "$((count - lines_read))")
+        lines_read=$count
+    fi
+    [ -z "$pending_text" ] || start_answer "$pending_stamp" "$pending_text"
+
+    if [ -n "$ended" ]; then
+        waited=0
+        while answer_running && [ "$waited" -lt "$FINISH_SECONDS" ]; do
+            sleep 1
+            waited=$((waited + 1))
+        done
+        # Недописанный за срок ответ обрывает ловушка выхода (cancel_answer).
+        echo
+        echo "Запись закончилась."
+        exit 0
+    fi
+    # Дописанный ответ больше не обрывается: его журнал уже записан.
+    if [ -n "$answer_pid" ] && ! answer_running; then
+        wait "$answer_pid" 2> /dev/null
+        answer_pid=""
+    fi
+    sleep "$POLL_SECONDS"
+done

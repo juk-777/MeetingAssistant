@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Режим встречи (docs/specs/2026-11-16-interview-mode.md): пишет mode.json и notes.md в каталог встречи и открывает
+# окно подсказок кандидату (candidate-window). Режим пока один — candidate.
+#
+# Всё нужное окну и сессии лежит в каталоге встречи, а не в путях к исходным файлам: сессия, подключившаяся заново,
+# читает режим оттуда, а пути заметок в Windows и WSL пишутся по-разному. Заметки склеиваются в notes.md, каждая под
+# заголовком со своим именем файла.
+#
+# Окно — там же, где идёт сессия и её `claude`: на Linux — эмулятор терминала (linux-terminal); в Windows — новое
+# консольное окно через powershell.exe: из WSL в нём bash того же дистрибутива (wsl.exe), из Git Bash — bash Git.
+# Путь к `claude` берётся из окружения сессии: в окне PATH бывает другим (wsl.exe не читает профиль).
+#
+# meeting-mode <каталог встречи> candidate [--context <строка>] [--notes <файл>]… [--model <модель>]
+set -euo pipefail
+
+usage="meeting-mode <каталог встречи> candidate [--context <строка>] [--notes <файл>]… [--model <модель>]"
+[ $# -ge 2 ] || { echo "$usage" >&2; exit 2; }
+[ -d "$1" ] || { echo "Нет каталога встречи: $1" >&2; exit 1; }
+[ "$2" = candidate ] || { echo "Режим «$2» не знаю: есть только candidate." >&2; exit 2; }
+
+here="$(cd "$(dirname "$0")" && pwd)"
+dir=$(cd "$1" && pwd)
+shift 2
+
+context=""
+model=opus
+notes=()
+while [ $# -gt 0 ]; do
+    case $1 in
+        --context) [ $# -ge 2 ] || { echo "$usage" >&2; exit 2; }; context=$2; shift 2 ;;
+        --model) [ $# -ge 2 ] || { echo "$usage" >&2; exit 2; }; model=$2; shift 2 ;;
+        --notes)
+            [ $# -ge 2 ] || { echo "$usage" >&2; exit 2; }
+            [ -f "$2" ] || { echo "Нет файла заметок: $2" >&2; exit 1; }
+            notes+=("$2")
+            shift 2
+            ;;
+        *) echo "$usage" >&2; exit 2 ;;
+    esac
+done
+[[ $model =~ ^[A-Za-z0-9.:_-]+$ ]] || { echo "Модель — имя без пробелов и кавычек: $model" >&2; exit 2; }
+
+claude=$(command -v claude) || { echo "Нет claude в PATH: окну подсказок нечем звать модель." >&2; exit 1; }
+
+# Строка JSON: \ и " экранируются, управляющие символы выбрасываются — в контексте одной строкой их не бывает.
+json_string() {
+    local value
+    value=$(printf '%s' "$1" | tr -d '\000-\037')
+    value=${value//\\/\\\\}
+    value=${value//\"/\\\"}
+    printf '"%s"' "$value"
+}
+
+printf '{"mode": "candidate", "context": %s, "model": %s}\n' "$(json_string "$context")" "$(json_string "$model")" \
+    > "$dir/mode.json"
+rm -f "$dir/notes.md"
+for file in "${notes[@]}"; do
+    { printf '# %s\n\n' "$(basename "$file")"; cat "$file"; printf '\n\n'; } >> "$dir/notes.md"
+done
+
+window="$here/candidate-window"
+os=$(bash "$here/platform")
+
+if [ "$os" = linux ]; then
+    # shellcheck disable=SC2016 # параметры раскрывает оболочка окна
+    bash "$here/linux-terminal" 'bash "$1" "$2" "$3"' подсказки "$window" "$dir" "$claude" && exit 0
+    printf 'Запустите в терминале:\n  bash %q %q %q\n' "$window" "$dir" "$claude" >&2
+    exit 1
+fi
+
+# Windows. Пути и имя дистрибутива — переменными окружения, а не в командной строке PowerShell: кавычки и кириллица
+# не ломают команду. Из Git Bash bash окна — свой, Windows-путь к нему и к скрипту.
+if [ -n "${WSL_DISTRO_NAME:-}" ]; then
+    # Имя дистрибутива — без кавычек в командной строке: wsl.exe их не снимает и ищет «"Ubuntu"» (WSL_E_DISTRO_NOT_FOUND).
+    # Пробелов в имени дистрибутива WSL не допускает.
+    [[ $WSL_DISTRO_NAME =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Имя дистрибутива WSL не разобрать: $WSL_DISTRO_NAME" >&2; exit 1; }
+    export MEETING_WINDOW_PROGRAM=wsl.exe MEETING_WINDOW_DISTRO=$WSL_DISTRO_NAME
+    export MEETING_WINDOW_SCRIPT=$window MEETING_WINDOW_DIR=$dir MEETING_WINDOW_CLAUDE=$claude
+else
+    export MEETING_WINDOW_PROGRAM MEETING_WINDOW_DISTRO="" MEETING_WINDOW_SCRIPT MEETING_WINDOW_DIR MEETING_WINDOW_CLAUDE
+    MEETING_WINDOW_PROGRAM=$(cygpath -w "$(command -v bash)")
+    MEETING_WINDOW_SCRIPT=$(cygpath -w "$window")
+    MEETING_WINDOW_DIR=$(cygpath -w "$dir")
+    MEETING_WINDOW_CLAUDE=$(cygpath -w "$claude")
+fi
+export WSLENV="${WSLENV:+$WSLENV:}MEETING_WINDOW_PROGRAM:MEETING_WINDOW_DISTRO:MEETING_WINDOW_SCRIPT:MEETING_WINDOW_DIR:MEETING_WINDOW_CLAUDE"
+# Git Bash переделывает похожие на путь значения переменных, когда запускает программу Windows: MEETING_* — как есть.
+export MSYS2_ENV_CONV_EXCL="${MSYS2_ENV_CONV_EXCL:+$MSYS2_ENV_CONV_EXCL;}MEETING_"
+
+powershell.exe -NoProfile -NonInteractive -Command '
+$ErrorActionPreference = "Stop"
+$arguments = @()
+if ($env:MEETING_WINDOW_DISTRO) { $arguments += "-d $env:MEETING_WINDOW_DISTRO -e bash" }
+$arguments += "`"$env:MEETING_WINDOW_SCRIPT`" `"$env:MEETING_WINDOW_DIR`" `"$env:MEETING_WINDOW_CLAUDE`""
+Start-Process -FilePath $env:MEETING_WINDOW_PROGRAM -ArgumentList ($arguments -join " ") -WorkingDirectory $env:USERPROFILE
+' && exit 0
+echo "Окно подсказок не открылось. Запустите в терминале: bash '$window' '$dir' '$claude'" >&2
+exit 1

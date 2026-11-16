@@ -3,11 +3,7 @@
 # клавиши. Зовут meeting-start и meeting-refine.
 #
 # Окно своё, как в Windows: в нём видны устройства и ход, остановка — Ctrl+C. После итога или отказа окно ждёт
-# клавишу: и итог, и причина отказа видны только в нём. Аргументы уходят окну позиционными параметрами bash -c,
-# а не текстом команды: кавычки и $ в имени встречи не исполняются.
-#
-# Эмулятор — по списку ниже. Эмулятор, который отказал на старте, пропускается, и пробуется следующий: поставщик
-# x-terminal-emulator может не знать -e (Ptyxis в Ubuntu 26.04 — так).
+# клавишу: и итог, и причина отказа видны только в нём. Окно открывает linux-terminal.
 #
 # Код 3 — приложение записи не установлено (нет meeting или каталога моделей): скилл предлагает meeting-install.
 # Ни один эмулятор не открыл окно — код 1 и команда для ручного запуска.
@@ -31,32 +27,10 @@ app=$(bash "$here/linux-setting" app)
 window='Storage__MeetingsRoot=$1 Speech__ModelsDirectory=$2 "$3" "${@:4}"
 read -rsn1 -p "Окно можно закрыть: любая клавиша." || true'
 
-# Эмулятор и ключ, после которого идут команда и её аргументы. Первым — xdg-terminal-exec: терминал, выбранный в
-# системе, команда — аргументами без ключа. Дальше — Ptyxis (Ubuntu 26.04, Fedora), выбор системы Debian и Ubuntu,
-# эмуляторы GNOME, KDE, Xfce и xterm, который есть почти везде.
-candidates=('xdg-terminal-exec' 'ptyxis --' 'x-terminal-emulator -e' 'gnome-terminal --' 'konsole -e' 'xfce4-terminal -x' 'xterm -e')
-failed=()
-for candidate in "${candidates[@]}"; do
-    read -ra terminal <<< "$candidate"
-    command -v "${terminal[0]}" > /dev/null || continue
-
-    # Эмулятор может и вернуться сразу (gnome-terminal отдаёт окно своему серверу), и жить вместе с окном (xterm):
-    # в фоне, без потоков сессии, отказ на старте виден за секунду.
-    "${terminal[@]}" bash -c "$window" meeting "$root" "$models" "$app" "$@" < /dev/null > /dev/null 2>&1 &
-    opener=$!
-    sleep 1
-    if kill -0 "$opener" 2> /dev/null || wait "$opener"; then
-        exit 0
-    fi
-    failed+=("${terminal[0]}")
-done
+bash "$here/linux-terminal" "$window" meeting "$root" "$models" "$app" "$@" && exit 0
 
 {
-    if [ ${#failed[@]} -eq 0 ]; then
-        echo "Нет эмулятора терминала (${candidates[*]%% *}). Запустите в терминале:"
-    else
-        echo "Окно не открылось: ${failed[*]} вышли с ошибкой. Запустите в терминале:"
-    fi
+    echo "Запустите в терминале:"
     printf '  Storage__MeetingsRoot=%q Speech__ModelsDirectory=%q %q' "$root" "$models" "$app"
     printf ' %q' "$@"
     echo
