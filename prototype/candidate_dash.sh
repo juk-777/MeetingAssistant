@@ -31,7 +31,10 @@ answer_for() {
     : > "$meeting/events.log"
     printf '{"mode": "candidate", "model": "%s"}\n' "$model" > "$meeting/mode.json"
     # Без уведомлений: окно шлёт их через powershell.exe (WSL) или notify-send — стенду они не нужны.
-    PATH=$quiet_path bash "$scripts/meeting-candidate" "$meeting" > "$work/window" 2>&1 &
+    # Файл вывода обнуляется здесь, а не перенаправлением фоновой задачи: то срабатывает уже в дочернем процессе, и
+    # ожидание ниже успело бы увидеть вывод прошлого прогона.
+    : > "$work/window"
+    PATH=$quiet_path bash "$scripts/meeting-candidate" "$meeting" >> "$work/window" 2>&1 &
     local candidate=$!
     # Строки, дописанные до приветствия окна, оно считает прошлыми и не разбирает.
     until [ -s "$work/window" ]; do sleep 0.1; done
