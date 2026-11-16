@@ -149,7 +149,14 @@ answer() {
             [ -n "$notified" ] || notify "$line"
             echo
             journal_entry "$stamp" "$text" "$(< "$work/answer")"
+            rm -f "$work/running"
         }
+}
+
+# Идёт ли ответ — по признаку, который ставит start_answer до запуска, а снимает сам ответ, записав журнал: конец
+# записи ждёт записанного журнала, а не процесса, и признак есть с первого мгновения, ещё до того, как фон запустился.
+answer_running() {
+    [ -e "$work/running" ]
 }
 
 # Ответ «-» — модель решила, что отвечать не на что: уведомлять нечем.
@@ -167,11 +174,14 @@ journal_entry() {
 
 cancel_answer() {
     [ -n "$answer_pid" ] || return 0
-    if kill -0 "$answer_pid" 2> /dev/null; then
+    if answer_running; then
         kill -- "-$answer_pid" 2> /dev/null
         wait "$answer_pid" 2> /dev/null
+        rm -f "$work/running"
         echo " … (прервано)"
         journal_entry "${answer_header%%$'\t'*}" "${answer_header#*$'\t'}" "$(cat "$work/answer" 2> /dev/null) … (прервано)"
+    else
+        wait "$answer_pid" 2> /dev/null
     fi
     answer_pid=""
 }
@@ -182,6 +192,7 @@ start_answer() {
     write_prompt "$text"
     printf '\n▶ %s %s\n' "$stamp" "$text"
     answer_header="$stamp"$'\t'"$text"
+    : > "$work/running"
     answer "$stamp" "$text" &
     answer_pid=$!
 }
@@ -190,6 +201,10 @@ lines_read=$(complete_lines)
 echo "Подсказки кандидату: $(basename "$dir"). Ответ — на каждую реплику собеседников; окно закроется после конца записи."
 
 while true; do
+    # Конец записи — до чтения строк: процесс записи пишет строку раньше события, так что все строки до конца уже
+    # видны. В обратном порядке строка и конец, дописанные между двумя проверками, теряют последнюю реплику.
+    ended=""
+    if recording_ended; then ended=1; fi
     count=$(complete_lines)
     pending_stamp=""
     pending_text=""
@@ -210,19 +225,19 @@ while true; do
     fi
     [ -z "$pending_text" ] || start_answer "$pending_stamp" "$pending_text"
 
-    if recording_ended; then
+    if [ -n "$ended" ]; then
         waited=0
-        while [ -n "$answer_pid" ] && kill -0 "$answer_pid" 2> /dev/null && [ "$waited" -lt "$FINISH_SECONDS" ]; do
+        while answer_running && [ "$waited" -lt "$FINISH_SECONDS" ]; do
             sleep 1
             waited=$((waited + 1))
         done
-        if [ -n "$answer_pid" ] && ! kill -0 "$answer_pid" 2> /dev/null; then answer_pid=""; fi
+        # Недописанный за срок ответ обрывает ловушка выхода (cancel_answer).
         echo
         echo "Запись закончилась."
         exit 0
     fi
     # Дописанный ответ больше не обрывается: его журнал уже записан.
-    if [ -n "$answer_pid" ] && ! kill -0 "$answer_pid" 2> /dev/null; then
+    if [ -n "$answer_pid" ] && ! answer_running; then
         wait "$answer_pid" 2> /dev/null
         answer_pid=""
     fi
