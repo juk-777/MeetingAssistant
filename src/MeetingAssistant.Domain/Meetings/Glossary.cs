@@ -11,10 +11,11 @@ public sealed class Glossary
     public const string InvalidPatternCode = "Glossary.InvalidPattern";
 
     /// <summary>
-    /// Предел на сопоставление одного шаблона: шаблон пишет человек, и катастрофический возврат
-    /// не должен останавливать распознавание встречи.
+    /// Шаблон пишет человек: без возврата сопоставление линейно по длине фразы и не может остановить
+    /// распознавание встречи, а то, чего этот режим не умеет, отказывает при разборе — до встречи, а не во время.
     /// </summary>
-    public static readonly TimeSpan MatchTimeout = TimeSpan.FromMilliseconds(100);
+    private const RegexOptions TermOptions =
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking;
 
     public static readonly Glossary Empty = new([]);
 
@@ -47,7 +48,7 @@ public sealed class Glossary
 
             try
             {
-                terms.Add(new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, MatchTimeout));
+                terms.Add(new Regex(pattern, TermOptions));
             }
             catch (ArgumentException exception)
             {
@@ -55,31 +56,20 @@ public sealed class Glossary
                     InvalidPatternCode,
                     $"Строка {lineNumber} словаря — не регулярное выражение: {exception.Message}"));
             }
+            catch (NotSupportedException exception)
+            {
+                return Result.Failure<Glossary>(new Error(
+                    InvalidPatternCode,
+                    $"Строка {lineNumber} словаря — шаблон недоступен без возврата (обратные ссылки, проверки "
+                    + $"вперёд и назад, атомарные группы, условия, слишком длинные повторы): {exception.Message}"));
+            }
         }
 
         return Result.Success(new Glossary(terms));
     }
 
     /// <summary>
-    /// Есть ли в тексте хотя бы один термин. Шаблон, не уложившийся в предел, считается несовпавшим.
+    /// Есть ли в тексте хотя бы один термин.
     /// </summary>
-    public bool Matches(string text)
-    {
-        foreach (Regex term in _terms)
-        {
-            try
-            {
-                if (term.IsMatch(text))
-                {
-                    return true;
-                }
-            }
-            catch (RegexMatchTimeoutException)
-            {
-                // Зависший шаблон не будит сессию и не роняет запись; остальные шаблоны проверяются дальше.
-            }
-        }
-
-        return false;
-    }
+    public bool Matches(string text) => _terms.Any(term => term.IsMatch(text));
 }

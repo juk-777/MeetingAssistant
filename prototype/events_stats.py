@@ -18,7 +18,13 @@ from collections import Counter
 
 if len(sys.argv) < 2:
     sys.exit("Запуск: python events_stats.py <каталог встречи>[,<звук>]...")
-hours = lines = words = questioned = agent = wakes = 0
+# Обращение — то же правило, что WakePolicy.AddressWord; слова с той же основой вне правила считаются отдельно:
+# по ним видно, сколько ложных пробуждений дало бы правило шире.
+ADDRESS = re.compile(r"\bагент(?:а|у|ом|е)?\b")
+STEM = re.compile(r"\w*агент\w*")
+hours = lines = words = questioned = wakes = 0
+agent = Counter()
+stem_other = 0
 reasons = Counter()
 gaps = []
 for argument in sys.argv[1:]:
@@ -38,7 +44,10 @@ for argument in sys.argv[1:]:
             lines += 1
             words += len(re.findall(r"\w+", text))
             questioned += "?" in text
-            agent += len(re.findall(r"\bагент\b", text.lower()))
+            lowered = text.lower()
+            for match in ADDRESS.finditer(lowered):
+                agent[match.group()] += 1
+            stem_other += sum(1 for word in STEM.findall(lowered) if not ADDRESS.fullmatch(word))
     events = os.path.join(meeting, "events.log")
     times = []
     if os.path.exists(events):
@@ -55,7 +64,10 @@ gaps.sort()
 print(f"встреч {len(sys.argv) - 1}, звука {hours:.2f} ч, строк {lines}, слов {words}")
 print(f"пробуждений {wakes} ({wakes / hours:.0f} в час): "
       + ", ".join(f"{reason} {n} ({n / hours:.0f} в час)" for reason, n in reasons.most_common() if reason != "конец записи"))
-print(f"фраз с ? {questioned}, из них событием «вопрос» {reasons['вопрос']}; слово «агент» в тексте {agent}")
+print(f"фраз с ? {questioned}, из них событием «вопрос» {reasons['вопрос']}")
+print("слово обращения в тексте: "
+      + (", ".join(f"«{word}» {n}" for word, n in agent.most_common()) or "0")
+      + f"; слов с основой «агент» вне правила {stem_other}")
 if gaps:
     print(f"интервал между пробуждениями по таймкодам встречи: p10 {gaps[len(gaps) // 10]:.0f} с, "
           f"p50 {gaps[len(gaps) // 2]:.0f} с, p90 {gaps[len(gaps) * 9 // 10]:.0f} с")

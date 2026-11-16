@@ -23,6 +23,16 @@ public sealed class WakePolicyTests
         WakePolicy.Evaluate(text, Glossary.Empty, NoSpeech).ShouldBe([WakeReason.Address]);
     }
 
+    [Theory]
+    [InlineData("спроси агента, где это решение")]
+    [InlineData("передай Агенту задачу")]
+    [InlineData("сверимся с агентом")]
+    [InlineData("думаю об агенте")]
+    public void Evaluate_WhenAddressWordInSingularCase_ReturnsAddress(string text)
+    {
+        WakePolicy.Evaluate(text, Glossary.Empty, NoSpeech).ShouldBe([WakeReason.Address]);
+    }
+
     [Fact]
     public void Evaluate_WhenClaudeNamed_ReturnsNoReasons()
     {
@@ -32,7 +42,10 @@ public sealed class WakePolicyTests
     [Theory]
     [InlineData("агентство уже ответило")]
     [InlineData("тут нужен субагент")]
-    public void Evaluate_WhenAddressWordIsPartOfAnotherWord_ReturnsNoReasons(string text)
+    [InlineData("агентский договор подписан")]
+    [InlineData("платёжные агенты подключены")]
+    [InlineData("список агентов готов")]
+    public void Evaluate_WhenAddressWordIsDerivedOrPlural_ReturnsNoReasons(string text)
     {
         WakePolicy.Evaluate(text, Glossary.Empty, NoSpeech).ShouldBeEmpty();
     }
