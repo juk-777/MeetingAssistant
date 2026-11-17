@@ -2,8 +2,10 @@
 
 Запуск: python interview_stereo.py <звук собеседования.wav> — 16 кГц моно; разметка —
 prototype/out/interviews-text/<имя>.tsv и `<имя>.labels` (interview_transcript.py и разметка по смыслу). Фразы
-интервьюера (I) идут в левый канал («Я»), кандидата и обоих сразу (C, M) — в правый («Собеседники»), вне фраз —
-тишина. Пишет `<имя>.stereo.wav` рядом со входом (samples/ вне git).
+интервьюера (I) идут в левый канал («Я»), кандидата и обоих сразу (C, M) — в правый («Собеседники»), вне фраз — шум
+комнаты около −60 дБ полной шкалы, а не цифровая тишина: на нулях Silero теряет начало фразы, и короткие фразы,
+вырезанные впритык, пропадают (`docs/pitfalls.md`, sherpa-onnx VAD) — в живом канале звонка нулей нет. Пишет
+`<имя>.stereo.wav` рядом со входом (samples/ вне git).
 """
 import os
 import sys
@@ -31,7 +33,9 @@ with open(os.path.join(LABELLED, name + ".labels"), encoding="utf-8") as f:
             number, label = line.split()
             labels[int(number)] = label
 
-stereo = np.zeros((len(mono), 2), dtype=np.int16)
+NOISE_LEVEL = 30  # СКО шума в отсчётах PCM 16: около −60 дБ полной шкалы
+noise = np.random.default_rng(0).normal(0, NOISE_LEVEL, (len(mono), 2))
+stereo = np.clip(noise, -32768, 32767).astype(np.int16)
 with open(os.path.join(LABELLED, name + ".tsv"), encoding="utf-8") as f:
     for line in f:
         number, start, end, _ = line.split("\t", 3)
