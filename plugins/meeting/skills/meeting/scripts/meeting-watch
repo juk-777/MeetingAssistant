@@ -19,6 +19,7 @@
 set -euo pipefail
 
 END_OF_RECORDING="конец записи"
+ANSWER_END="конец ответа"
 POLL_SECONDS=0.5
 LINE_WAIT_POLLS=10
 
@@ -111,6 +112,12 @@ while true; do
     while [ "$events_seen" -lt "$count" ]; do
         events_seen=$((events_seen + 1))
         IFS=$'\t' read -r at number reasons < <(sed -n "${events_seen}p" "$events")
+
+        # Конец ответа читает окно подсказок интервьюеру, сессию он не будит: его строки уйдут со следующим событием.
+        if [ "$reasons" = "$ANSWER_END" ]; then
+            save_state
+            continue
+        fi
 
         wait_for_line "$number"
         collect_block

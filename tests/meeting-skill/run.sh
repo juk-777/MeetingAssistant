@@ -1815,7 +1815,7 @@ candidate_WhenWindowClosed_StopsCallingModel() {
     : > "$meeting/transcript.md"
     : > "$meeting/events.log"
     MEETING_CLAUDE="$work/claude" PATH="$work/stub-ps-many:$PATH" \
-        script -qfc "bash '$bin/candidate-window' '$meeting' '$work/claude'" /dev/null > /dev/null 2>&1 &
+        script -qfc "bash '$bin/hint-window' '$meeting' '$work/claude'" /dev/null > /dev/null 2>&1 &
     local window=$!
     sleep 2
 
@@ -1888,8 +1888,8 @@ mode_WhenNoOptions_WritesOpusAndNoNotes() {
 mode_WhenUnknownModeOrMissingNotes_RefusesWithoutWriting() {
     new_meeting
     stub_mode_tools
-    if PATH="$work/stub-mode:$PATH" bash "$bin/meeting-mode" "$meeting" interviewer 2> /dev/null; then
-        echo "режим interviewer принят"
+    if PATH="$work/stub-mode:$PATH" bash "$bin/meeting-mode" "$meeting" recruiter 2> /dev/null; then
+        echo "режим recruiter принят"
         return 1
     fi
     if PATH="$work/stub-mode:$PATH" bash "$bin/meeting-mode" "$meeting" candidate --notes "$work/нет.md" 2> /dev/null; then
@@ -1908,7 +1908,7 @@ mode_WhenInWsl_OpensWindowInSameDistroWithMeetingAndClaude() {
         bash "$bin/meeting-mode" "$meeting" candidate || return 1
 
     local expected
-    expected=$(printf '%s\n' wsl.exe 'Ubuntu-24.04' "$bin/candidate-window" "$meeting" "$work/stub-mode/claude")
+    expected=$(printf '%s\n' wsl.exe 'Ubuntu-24.04' "$bin/hint-window" "$meeting" "$work/stub-mode/claude")
     [ "$(cat "$work/window.env")" = "$expected" ] || { cat "$work/window.env"; return 1; }
     grep -q '^USERPROFILE/p:MEETING_WINDOW_PROGRAM:' "$work/window.wslenv" || { cat "$work/window.wslenv"; return 1; }
 }
@@ -1920,7 +1920,7 @@ modegitbash_WhenInGitBash_OpensGitBashWindowWithWindowsPaths() {
     PATH="$work/stub-mode:$PATH" bash "$bin/meeting-mode" "$meeting" candidate || return 1
 
     local expected
-    expected=$(printf '%s\n' "$(cygpath -w "$(command -v bash)")" '' "$(cygpath -w "$bin/candidate-window")" \
+    expected=$(printf '%s\n' "$(cygpath -w "$(command -v bash)")" '' "$(cygpath -w "$bin/hint-window")" \
         "$(cygpath -w "$meeting")" "$(cygpath -w "$work/stub-mode/claude")")
     [ "$(cat "$work/window.env")" = "$expected" ] || { cat "$work/window.env"; return 1; }
 }
@@ -1937,7 +1937,7 @@ linuxmode_WhenTerminalPresent_OpensCandidateWindowWithMeetingAndClaude() {
     linux_skill "$work/stub-lmode" meeting-mode "$meeting" candidate || return 1
 
     local expected
-    expected=$(printf '%s\n' -e bash -c 'bash "$1" "$2" "$3"' подсказки "$bin/candidate-window" "$meeting" \
+    expected=$(printf '%s\n' -e bash -c 'bash "$1" "$2" "$3"' подсказки "$bin/hint-window" "$meeting" \
         "$work/stub-lmode/claude")
     [ "$(cat "$work/terminal.args")" = "$expected" ] || { cat "$work/terminal.args"; return 1; }
 }
@@ -1953,7 +1953,163 @@ linuxmode_WhenNoTerminal_RefusesWithCommandToRun() {
         echo "отказа нет"
         return 1
     fi
-    grep -qF "$bin/candidate-window" "$work/mode.err" || { cat "$work/mode.err"; return 1; }
+    grep -qF "$bin/hint-window" "$work/mode.err" || { cat "$work/mode.err"; return 1; }
+}
+
+watch_WhenAnswerEndEvent_DoesNotWakeSessionAndGivesLinesWithNextEvent() {
+    new_meeting
+    utterance 1
+    start_watch "$work/project" "$work/out"
+    wait_lines "$work/out" 2
+
+    utterance 2
+    printf '1762774262.002\t2\tконец ответа\n' >> "$meeting/events.log"
+    utterance 3
+    event 3
+
+    expect_output "$work/out" $'начало\t1' "$(line 1)" "$(event_header 3)" "$(line 2)" "$(line 3)"
+}
+
+mark_WhenCalled_AppendsEpochLine() {
+    new_meeting
+    bash "$bin/meeting-mark" "$meeting" || return 1
+    bash "$bin/meeting-mark" "$meeting" || return 1
+
+    [ "$(wc -l < "$meeting/marks.log")" -eq 2 ] || { cat "$meeting/marks.log"; return 1; }
+    grep -qvE '^[0-9]+\.[0-9]+$' "$meeting/marks.log" && { cat "$meeting/marks.log"; return 1; }
+    return 0
+}
+
+# start_interviewer: meeting-interviewer на встрече $meeting с двойником claude; ждёт строку приветствия.
+start_interviewer() {
+    : >> "$meeting/transcript.md"
+    : >> "$meeting/events.log"
+    MEETING_CLAUDE="$work/claude" PATH="$work/stub-ps-many:$PATH" \
+        bash "$bin/meeting-interviewer" "$meeting" > "$work/interviewer.out" 2>&1 &
+    interviewer_pid=$!
+    watchers+=("$interviewer_pid")
+    wait_lines "$work/interviewer.out" 1
+}
+
+answer_end() {
+    printf '1762774262.%03d\t%s\tконец ответа\n' "$1" "$1" >> "$meeting/events.log"
+}
+
+# answer_part <файл запроса>: часть запроса модели после «Ответ кандидата:».
+answer_part() {
+    sed -n '/^Ответ кандидата:$/,$p' "$1" | tail -n +2
+}
+
+interviewer_WhenAnswerEnds_HintsOnCandidateLinesAndJournals() {
+    new_meeting
+    printf '{"mode": "interviewer", "context": "бэкенд", "model": "sonnet"}\n' > "$meeting/mode.json"
+    stub_claude 0.05 'неполно — нет идемпотентности' '\n- Что при повторе сообщения?'
+    start_interviewer
+
+    say 1 Я 'Как вы гарантируете доставку событий?'
+    say 2 Собеседники 'Пишем событие в outbox в той же транзакции.'
+    say 3 Собеседники 'Потом отдельный процесс публикует.'
+    answer_end 3
+    end_of_recording 3
+
+    expect_exit "$interviewer_pid" 0 || return 1
+    local expected
+    expected=$(printf '## [00:00:03] конец ответа\n\nнеполно — нет идемпотентности\n- Что при повторе сообщения?')
+    [ "$(cat "$meeting/interviewer.md")" = "$expected" ] || { cat "$meeting/interviewer.md"; return 1; }
+    expected=$(printf '%s\n' 'Пишем событие в outbox в той же транзакции.' 'Потом отдельный процесс публикует.')
+    [ "$(answer_part "$work/claude.prompt")" = "$expected" ] || { cat "$work/claude.prompt"; return 1; }
+    grep -qF 'Как вы гарантируете доставку событий?' "$work/claude.prompt" || { cat "$work/claude.prompt"; return 1; }
+    grep -qF 'подсказываешь интервьюеру' "$work/claude.system" || { cat "$work/claude.system"; return 1; }
+    grep -qF 'бэкенд' "$work/claude.system" || { cat "$work/claude.system"; return 1; }
+    grep -qF -- '--model sonnet' "$work/claude.args" || { cat "$work/claude.args"; return 1; }
+    [ "$(cat "$work/notify.all")" = 'неполно — нет идемпотентности' ] || { cat "$work/notify.all"; return 1; }
+}
+
+interviewer_WhenOthersSpeakWithoutAnswerEnd_DoesNotCallModel() {
+    new_meeting
+    stub_claude 0 'ответ'
+    start_interviewer
+
+    say 1 Собеседники 'Пишем событие в outbox в той же транзакции.'
+    say 2 Собеседники 'Потом отдельный процесс публикует.'
+    event 2
+    end_of_recording 2
+
+    expect_exit "$interviewer_pid" 0 || return 1
+    [ ! -e "$work/claude.args" ] || { echo "модель вызвана: $(cat "$work/claude.args")"; return 1; }
+}
+
+interviewer_WhenMarkWritten_HintsOnAnswerSoFar() {
+    new_meeting
+    stub_claude 0 'верно — по делу'
+    start_interviewer
+
+    say 1 Собеседники 'Пишем событие в outbox в той же транзакции.'
+    wait_lines "$work/interviewer.out" 1
+    bash "$bin/meeting-mark" "$meeting"
+    wait_file_text "$meeting/interviewer.md" 'верно — по делу' || return 1
+    end_of_recording 1
+
+    expect_exit "$interviewer_pid" 0 || return 1
+    grep -qF '## [00:00:01] оцени' "$meeting/interviewer.md" || { cat "$meeting/interviewer.md"; return 1; }
+}
+
+interviewer_WhenMarkDuringHint_CancelsItAndKeepsAnswerStart() {
+    new_meeting
+    stub_claude 0.4 'неполно' '\n- раз' '\n- два' '\n- три'
+    start_interviewer
+
+    say 1 Собеседники 'Пишем событие в outbox в той же транзакции.'
+    answer_end 1
+    wait_file_text "$work/interviewer.out" 'неполно' || return 1
+    say 2 Собеседники 'И ещё храним ключ идемпотентности.'
+    bash "$bin/meeting-mark" "$meeting"
+    wait_file_text "$work/interviewer.out" '(прервано)' || return 1
+    end_of_recording 2
+
+    expect_exit "$interviewer_pid" 0 || return 1
+    local expected
+    expected=$(printf '%s\n' 'Пишем событие в outbox в той же транзакции.' 'И ещё храним ключ идемпотентности.')
+    [ "$(answer_part "$work/claude.prompt")" = "$expected" ] || { cat "$work/claude.prompt"; return 1; }
+}
+
+interviewer_WhenHintCompleted_NextAnswerStartsAfterIt() {
+    new_meeting
+    stub_claude 0 '-'
+    start_interviewer
+
+    say 1 Собеседники 'Пишем событие в outbox в той же транзакции.'
+    answer_end 1
+    wait_file_text "$meeting/interviewer.md" '(нет подсказки)' || return 1
+    say 2 Собеседники 'И ещё храним ключ идемпотентности.'
+    answer_end 2
+    end_of_recording 2
+
+    expect_exit "$interviewer_pid" 0 || return 1
+    [ "$(answer_part "$work/claude.prompt")" = 'И ещё храним ключ идемпотентности.' ] || { cat "$work/claude.prompt"; return 1; }
+    [ ! -e "$work/notify.all" ] || { echo "уведомление на «-»: $(cat "$work/notify.all")"; return 1; }
+}
+
+hintwindow_WhenInterviewerMode_RunsInterviewerWindow() {
+    new_meeting
+    printf '{"mode": "interviewer", "context": "", "model": "opus"}\n' > "$meeting/mode.json"
+    stub_claude 0 'ответ'
+    : > "$meeting/transcript.md"
+    end_of_recording 0
+
+    PATH="$work/stub-ps-many:$PATH" bash "$bin/hint-window" "$meeting" "$work/claude" < /dev/null > "$work/window.out" 2>&1
+    grep -qF 'Подсказки интервьюеру' "$work/window.out" || { cat "$work/window.out"; return 1; }
+}
+
+mode_WhenInterviewer_WritesModeAndOpensHintWindow() {
+    new_meeting
+    stub_mode_tools
+
+    PATH="$work/stub-mode:$PATH" WSL_DISTRO_NAME='Ubuntu-24.04' bash "$bin/meeting-mode" "$meeting" interviewer \
+        --context 'бэкенд' || return 1
+
+    [ "$(bash "$bin/current-field" "$meeting/mode.json" mode)" = interviewer ] || { cat "$meeting/mode.json"; return 1; }
+    grep -qxF "$bin/hint-window" "$work/window.env" || { cat "$work/window.env"; return 1; }
 }
 
 for test in $(declare -F | awk '{ print $3 }' | grep -E '^[a-z]+_When'); do
