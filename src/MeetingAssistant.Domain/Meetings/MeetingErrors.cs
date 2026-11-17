@@ -10,4 +10,5 @@ public static class MeetingErrors
     public const string AlreadyStopped = "Meeting.AlreadyStopped";
     public const string EmptyUtterance = "Meeting.EmptyUtterance";
     public const string InvalidSpeechSpan = "Meeting.InvalidSpeechSpan";
+    public const string InvalidSpeechActivity = "Meeting.InvalidSpeechActivity";
 }

@@ -3,12 +3,18 @@ using MeetingAssistant.SharedKernel;
 namespace MeetingAssistant.Domain.Meetings;
 
 /// <summary>
-/// Встреча: выдаёт сквозные номера реплик, копит речь с последнего события и решает, будить ли сессию.
+/// Встреча: выдаёт сквозные номера реплик, копит речь с последнего события, решает, будить ли сессию, и следит за
+/// концом ответа собеседников.
 /// </summary>
 public sealed class Meeting : AggregateRoot<Guid>
 {
     private int _lastUtteranceNumber;
     private TimeSpan _speechSinceLastWake;
+
+    // Идущий ответ собеседников: начало первой фразы, конец последней и её номер; нет фраз с прошлого конца — null.
+    private TimeSpan? _answerStart;
+    private TimeSpan _answerEnd;
+    private int _answerUtteranceNumber;
 
     private Meeting(Guid id, string name, Glossary glossary, DateTimeOffset startedAt)
     {
@@ -53,6 +59,13 @@ public sealed class Meeting : AggregateRoot<Guid>
 
         Raise(new UtteranceRecorded(utterance));
 
+        if (channel == Channel.Others)
+        {
+            _answerStart ??= span.Start;
+            _answerEnd = span.Start + span.Duration;
+            _answerUtteranceNumber = utterance.Number;
+        }
+
         IReadOnlyList<WakeReason> reasons = WakePolicy.Evaluate(utterance.Text, Glossary, _speechSinceLastWake);
 
         if (reasons.Count > 0)
@@ -62,6 +75,33 @@ public sealed class Meeting : AggregateRoot<Guid>
         }
 
         return utterance;
+    }
+
+    /// <summary>
+    /// Сверяет речь каналов с идущим ответом собеседников и поднимает <see cref="AnswerEnded"/>, если он кончился.
+    /// </summary>
+    public void Observe(SpeechActivity me, SpeechActivity others, DateTimeOffset at)
+    {
+        EnsureRunning();
+
+        if (_answerStart is not { } answerStart)
+        {
+            return;
+        }
+
+        AnswerOutcome outcome = AnswerEndPolicy.Evaluate(answerStart, _answerEnd, me, others);
+
+        if (outcome == AnswerOutcome.Continues)
+        {
+            return;
+        }
+
+        _answerStart = null;
+
+        if (outcome == AnswerOutcome.Ended)
+        {
+            Raise(new AnswerEnded(_answerUtteranceNumber, at));
+        }
     }
 
     public void Stop(DateTimeOffset at)
