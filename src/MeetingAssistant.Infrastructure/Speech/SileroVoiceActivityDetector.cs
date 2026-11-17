@@ -34,7 +34,8 @@ internal sealed class SileroVoiceActivityDetectorFactory(IOptions<SpeechOptions>
 
         return new SileroVoiceActivityDetector(
             new VoiceActivityDetector(config, BufferSeconds),
-            config.SileroVad.WindowSize);
+            config.SileroVad.WindowSize,
+            (int)(MinSpeechSeconds * SpeechAudio.SampleRate));
     }
 }
 
@@ -45,9 +46,13 @@ internal sealed class SileroVoiceActivityDetectorFactory(IOptions<SpeechOptions>
 /// Нативный детектор получает звук ровно окнами Silero, остаток ждёт следующего куска: от размера кусков
 /// sherpa-onnx зависят границы фраз, а звук одним большим массивом он почти целиком теряет.
 /// </remarks>
-internal sealed class SileroVoiceActivityDetector(VoiceActivityDetector detector, int windowSize) : IVoiceActivityDetector
+internal sealed class SileroVoiceActivityDetector(VoiceActivityDetector detector, int windowSize, int minSpeechSamples)
+    : IVoiceActivityDetector
 {
     private readonly List<float> _pending = [];
+    private long _processed;
+
+    public TimeSpan? SpeakingSince { get; private set; }
 
     public IReadOnlyList<DetectedPhrase> Accept(ReadOnlyMemory<float> samples)
     {
@@ -58,6 +63,8 @@ internal sealed class SileroVoiceActivityDetector(VoiceActivityDetector detector
         for (int window = 0; window < windows; window++)
         {
             detector.AcceptWaveform(_pending.GetRange(window * windowSize, windowSize).ToArray());
+            _processed += windowSize;
+            TrackSpeech();
         }
 
         _pending.RemoveRange(0, windows * windowSize);
@@ -69,10 +76,23 @@ internal sealed class SileroVoiceActivityDetector(VoiceActivityDetector detector
     public IReadOnlyList<DetectedPhrase> Flush()
     {
         detector.Flush();
+        SpeakingSince = null;
         return TakeReady();
     }
 
     public void Dispose() => detector.Dispose();
+
+    // Детектор признаёт речь, когда она длится минимальную длительность, — начало речи раньше на неё и окно.
+    private void TrackSpeech()
+    {
+        if (!detector.IsSpeechDetected())
+        {
+            SpeakingSince = null;
+            return;
+        }
+
+        SpeakingSince ??= SpeechAudio.Duration(Math.Max(0, _processed - windowSize - minSpeechSamples));
+    }
 
     private List<DetectedPhrase> TakeReady()
     {

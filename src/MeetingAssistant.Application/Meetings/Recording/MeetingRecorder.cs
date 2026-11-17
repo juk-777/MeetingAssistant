@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using MeetingAssistant.Application.Abstractions.Messaging;
+using MeetingAssistant.Application.Meetings.Observe;
 using MeetingAssistant.Application.Meetings.Recognize;
 using MeetingAssistant.Application.Meetings.Stop;
 using MeetingAssistant.Domain.Meetings;
@@ -9,20 +10,24 @@ using Channel = MeetingAssistant.Domain.Meetings.Channel;
 namespace MeetingAssistant.Application.Meetings.Recording;
 
 /// <summary>
-/// Конвейер записи: звук каналов → детектор речи канала → одна очередь фраз → распознавание → остановка.
+/// Конвейер записи: звук каналов → детектор речи канала → одна очередь фраз и речи каналов → распознавание и
+/// сверка речи → остановка.
 /// </summary>
 /// <remarks>
 /// Очередь читает один читатель, и остановка идёт им же после последней фразы: агрегат встречи не потокобезопасен.
-/// Очередь без ограничения размера: переполненная очередь остановила бы подачу, а живой захват ждать не будет.
+/// Речь каналов встаёт в очередь после каждого куска, следом за фразами, которые кусок закрыл: конец ответа
+/// сверяется с уже записанными фразами. Очередь без ограничения размера: переполненная очередь остановила бы подачу,
+/// а живой захват ждать не будет.
 /// </remarks>
 internal sealed class MeetingRecorder(
     ICommandHandler<RecognizeSpeech> recognizeSpeech,
+    ICommandHandler<ObserveSpeech> observeSpeech,
     ICommandHandler<StopMeeting> stopMeeting,
     IVoiceActivityDetectorFactory detectorFactory) : IMeetingRecorder
 {
     public async Task<Result> Record(IAudioSource source, CancellationToken cancellationToken)
     {
-        Channel<RecognizeSpeech> phrases = System.Threading.Channels.Channel.CreateUnbounded<RecognizeSpeech>(
+        Channel<ICommand> phrases = System.Threading.Channels.Channel.CreateUnbounded<ICommand>(
             new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
 
         using var feeding = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -58,10 +63,11 @@ internal sealed class MeetingRecorder(
     /// <returns>Потеря устройства, если подача кончилась ею.</returns>
     private async Task<AudioSourceException?> Feed(
         IAudioSource source,
-        ChannelWriter<RecognizeSpeech> phrases,
+        ChannelWriter<ICommand> phrases,
         CancellationToken cancellationToken)
     {
         var detectors = new Dictionary<Channel, IVoiceActivityDetector>();
+        var positions = new Dictionary<Channel, long>();
 
         try
         {
@@ -74,6 +80,10 @@ internal sealed class MeetingRecorder(
                 }
 
                 Enqueue(phrases, chunk.Channel, detector.Accept(chunk.Samples));
+                positions[chunk.Channel] = positions.GetValueOrDefault(chunk.Channel) + chunk.Samples.Length;
+                _ = phrases.TryWrite(new ObserveSpeech(
+                    Activity(Channel.Me, detectors, positions),
+                    Activity(Channel.Others, detectors, positions)));
             }
 
             return null;
@@ -110,14 +120,19 @@ internal sealed class MeetingRecorder(
         }
     }
 
-    private async Task<Result> RecognizeAll(ChannelReader<RecognizeSpeech> phrases, CancellationTokenSource feeding)
+    private async Task<Result> RecognizeAll(ChannelReader<ICommand> phrases, CancellationTokenSource feeding)
     {
         try
         {
             // Без токена отмены: фразы, вырезанные до Ctrl+C, распознаются до конца.
-            await foreach (RecognizeSpeech phrase in phrases.ReadAllAsync(CancellationToken.None))
+            await foreach (ICommand step in phrases.ReadAllAsync(CancellationToken.None))
             {
-                Result result = await recognizeSpeech.Handle(phrase, CancellationToken.None);
+                Result result = step switch
+                {
+                    RecognizeSpeech phrase => await recognizeSpeech.Handle(phrase, CancellationToken.None),
+                    ObserveSpeech activity => await observeSpeech.Handle(activity, CancellationToken.None),
+                    _ => throw new InvalidOperationException($"Неизвестный шаг очереди записи: {step.GetType().Name}."),
+                };
 
                 if (result.IsFailure)
                 {
@@ -135,7 +150,19 @@ internal sealed class MeetingRecorder(
         }
     }
 
-    private static void Enqueue(ChannelWriter<RecognizeSpeech> phrases, Channel channel, IReadOnlyList<DetectedPhrase> detected)
+    // Канал без звука — позиция 0: конец ответа не наступит, пока звук не пошёл в оба канала.
+    private static SpeechActivity Activity(
+        Channel channel,
+        Dictionary<Channel, IVoiceActivityDetector> detectors,
+        Dictionary<Channel, long> positions)
+    {
+        TimeSpan position = SpeechAudio.Duration(positions.GetValueOrDefault(channel));
+        TimeSpan? speakingSince = detectors.GetValueOrDefault(channel)?.SpeakingSince;
+
+        return new SpeechActivity(position, speakingSince > position ? position : speakingSince);
+    }
+
+    private static void Enqueue(ChannelWriter<ICommand> phrases, Channel channel, IReadOnlyList<DetectedPhrase> detected)
     {
         foreach (DetectedPhrase phrase in detected)
         {
