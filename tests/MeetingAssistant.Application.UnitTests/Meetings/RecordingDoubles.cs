@@ -43,6 +43,11 @@ internal sealed class HoldingDetector : IVoiceActivityDetector
 
     public bool Disposed { get; private set; }
 
+    /// <summary>
+    /// Удержанный кусок — речь, которая идёт с его начала.
+    /// </summary>
+    public TimeSpan? SpeakingSince => _held?.Start;
+
     public IReadOnlyList<DetectedPhrase> Accept(ReadOnlyMemory<float> samples)
     {
         DetectedPhrase? previous = _held;

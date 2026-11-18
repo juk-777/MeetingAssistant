@@ -44,4 +44,6 @@ public interface IWakeEventWriter
     Task AppendWake(SessionWakeRequested wake, CancellationToken cancellationToken);
 
     Task AppendEnd(MeetingStopped stopped, CancellationToken cancellationToken);
+
+    Task AppendAnswerEnd(AnswerEnded answerEnded, CancellationToken cancellationToken);
 }

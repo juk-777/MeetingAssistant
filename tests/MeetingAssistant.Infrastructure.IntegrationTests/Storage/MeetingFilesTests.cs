@@ -34,6 +34,7 @@ public sealed class MeetingFilesTests : IDisposable
             new SessionWakeRequested(12, [WakeReason.Address, WakeReason.Question, WakeReason.Term], RecognizedAt.AddMilliseconds(2)),
             Token);
         await events.AppendWake(new SessionWakeRequested(13, [WakeReason.AccumulatedSpeech], RecognizedAt.AddMilliseconds(3)), Token);
+        await events.AppendAnswerEnd(new AnswerEnded(12, RecognizedAt.AddMilliseconds(500)), Token);
         await events.AppendEnd(new MeetingStopped(13, RecognizedAt.AddSeconds(1)), Token);
 
         (await ReadLines(TranscriptFile.FileName)).ShouldBe(
@@ -45,6 +46,7 @@ public sealed class MeetingFilesTests : IDisposable
         [
             "1762774261.083\t12\tобращение,вопрос,термин",
             "1762774261.084\t13\tнакопилось",
+            "1762774261.581\t12\tконец ответа",
             "1762774262.081\t13\tконец записи",
         ]);
     }

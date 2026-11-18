@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Режим встречи (docs/specs/2026-11-16-interview-mode.md): пишет mode.json и notes.md в каталог встречи и открывает
-# окно подсказок кандидату (candidate-window). Режим пока один — candidate.
+# Режим встречи (docs/specs/2026-11-16-interview-mode.md, docs/specs/2026-11-17-interviewer-role.md): пишет mode.json
+# и notes.md в каталог встречи и открывает окно подсказок роли (hint-window). Режимы — candidate и interviewer.
 #
 # Всё нужное окну и сессии лежит в каталоге встречи, а не в путях к исходным файлам: сессия, подключившаяся заново,
 # читает режим оттуда, а пути заметок в Windows и WSL пишутся по-разному. Заметки склеиваются в notes.md, каждая под
@@ -10,13 +10,16 @@
 # консольное окно через powershell.exe: из WSL в нём bash того же дистрибутива (wsl.exe), из Git Bash — bash Git.
 # Путь к `claude` берётся из окружения сессии: в окне PATH бывает другим (wsl.exe не читает профиль).
 #
-# meeting-mode <каталог встречи> candidate [--context <строка>] [--notes <файл>]… [--model <модель>]
+# meeting-mode <каталог встречи> candidate|interviewer [--context <строка>] [--notes <файл>]… [--model <модель>]
 set -euo pipefail
 
-usage="meeting-mode <каталог встречи> candidate [--context <строка>] [--notes <файл>]… [--model <модель>]"
+usage="meeting-mode <каталог встречи> candidate|interviewer [--context <строка>] [--notes <файл>]… [--model <модель>]"
 [ $# -ge 2 ] || { echo "$usage" >&2; exit 2; }
 [ -d "$1" ] || { echo "Нет каталога встречи: $1" >&2; exit 1; }
-[ "$2" = candidate ] || { echo "Режим «$2» не знаю: есть только candidate." >&2; exit 2; }
+case $2 in
+    candidate | interviewer) mode=$2 ;;
+    *) echo "Режим «$2» не знаю: есть candidate и interviewer." >&2; exit 2 ;;
+esac
 
 here="$(cd "$(dirname "$0")" && pwd)"
 dir=$(cd "$1" && pwd)
@@ -51,14 +54,14 @@ json_string() {
     printf '"%s"' "$value"
 }
 
-printf '{"mode": "candidate", "context": %s, "model": %s}\n' "$(json_string "$context")" "$(json_string "$model")" \
+printf '{"mode": "%s", "context": %s, "model": %s}\n' "$mode" "$(json_string "$context")" "$(json_string "$model")" \
     > "$dir/mode.json"
 rm -f "$dir/notes.md"
 for file in "${notes[@]}"; do
     { printf '# %s\n\n' "$(basename "$file")"; cat "$file"; printf '\n\n'; } >> "$dir/notes.md"
 done
 
-window="$here/candidate-window"
+window="$here/hint-window"
 os=$(bash "$here/platform")
 
 if [ "$os" = linux ]; then

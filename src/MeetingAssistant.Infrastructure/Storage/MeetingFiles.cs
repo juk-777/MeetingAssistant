@@ -30,6 +30,9 @@ internal sealed class EventsFile(MeetingDirectory meetingDirectory) : IWakeEvent
     public Task AppendWake(SessionWakeRequested wake, CancellationToken cancellationToken) =>
         Append(MeetingFileFormat.Wake(wake), cancellationToken);
 
+    public Task AppendAnswerEnd(AnswerEnded answerEnded, CancellationToken cancellationToken) =>
+        Append(MeetingFileFormat.AnswerEnd(answerEnded), cancellationToken);
+
     public Task AppendEnd(MeetingStopped stopped, CancellationToken cancellationToken) =>
         Append(MeetingFileFormat.End(stopped), cancellationToken);
 
@@ -44,12 +47,18 @@ internal static partial class MeetingFileFormat
 {
     public const string EndOfRecording = "конец записи";
 
+    // Не повод пробуждения сессии: его читает окно подсказок интервьюеру, и с другими поводами он не сочетается.
+    public const string AnswerEndReason = "конец ответа";
+
     public static string Transcript(Utterance utterance) =>
         $"{utterance.Number}\t{Epoch(utterance.RecognizedAt)}\t[{Timecode(utterance.Span.Start)}] " +
         $"{ChannelName(utterance.Channel)}: {SingleLine(utterance.Text)}";
 
     public static string Wake(SessionWakeRequested wake) =>
         $"{Epoch(wake.At)}\t{wake.UtteranceNumber}\t{string.Join(',', wake.Reasons.Select(ReasonName))}";
+
+    public static string AnswerEnd(AnswerEnded answerEnded) =>
+        $"{Epoch(answerEnded.At)}\t{answerEnded.UtteranceNumber}\t{AnswerEndReason}";
 
     public static string End(MeetingStopped stopped) =>
         $"{Epoch(stopped.At)}\t{stopped.LastUtteranceNumber}\t{EndOfRecording}";

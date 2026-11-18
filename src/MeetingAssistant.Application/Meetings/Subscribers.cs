@@ -17,6 +17,13 @@ internal sealed class WriteWakeEvent(IWakeEventWriter wakeEventWriter)
         wakeEventWriter.AppendWake(domainEvent, cancellationToken);
 }
 
+internal sealed class WriteAnswerEndEvent(IWakeEventWriter wakeEventWriter)
+    : IDomainEventSubscriber<AnswerEnded>
+{
+    public Task Handle(AnswerEnded domainEvent, CancellationToken cancellationToken) =>
+        wakeEventWriter.AppendAnswerEnd(domainEvent, cancellationToken);
+}
+
 internal sealed class WriteEndEvent(IWakeEventWriter wakeEventWriter)
     : IDomainEventSubscriber<MeetingStopped>
 {

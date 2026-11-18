@@ -98,6 +98,55 @@ public sealed class SpeechTests
         new SpeechOptionsValidator().Validate(null, Settings.Value).Succeeded.ShouldBeTrue();
     }
 
+    [Fact]
+    public void SpeakingSince_WhenSpeechThenSilence_StartsWithFirstPhraseAndClearsAfterPause()
+    {
+        const int chunk = SpeechAudio.SampleRate / 10;
+        float[] samples = [.. new float[SpeechAudio.SampleRate], .. LazyExample.Value, .. new float[2 * SpeechAudio.SampleRate]];
+        using IVoiceActivityDetector detector = new SileroVoiceActivityDetectorFactory(Settings).Create();
+        var phrases = new List<DetectedPhrase>();
+        var observed = new List<(TimeSpan Position, TimeSpan? Since)>();
+
+        for (int offset = 0; offset < samples.Length; offset += chunk)
+        {
+            int length = Math.Min(chunk, samples.Length - offset);
+            phrases.AddRange(detector.Accept(samples.AsMemory(offset, length)));
+            observed.Add((SpeechAudio.Duration(offset + length), detector.SpeakingSince));
+        }
+
+        DetectedPhrase first = phrases[0];
+        TimeSpan end = phrases[^1].Start + Duration(phrases[^1]);
+        TimeSpan? since = observed.Select(o => o.Since).First(value => value is not null);
+        since.ShouldNotBeNull();
+        (since.Value - first.Start).Duration().ShouldBeLessThan(TimeSpan.FromMilliseconds(100));
+        observed.Where(o => o.Position > first.Start + TimeSpan.FromSeconds(0.4) && o.Position < first.Start + Duration(first))
+            .ShouldAllBe(o => o.Since == since);
+        observed.Where(o => o.Position > end + TimeSpan.FromSeconds(0.7)).ShouldAllBe(o => o.Since == null);
+    }
+
+    [Fact]
+    public void SpeakingSince_WhenSpeechFromFirstSample_IsNotBeforeAudioStart()
+    {
+        const int chunk = SpeechAudio.SampleRate / 10;
+        DetectedPhrase phrase = Detect(LazyExample.Value, chunk)[0];
+        int from = (int)((phrase.Start.TotalSeconds + 0.5) * SpeechAudio.SampleRate);
+        float[] samples = LazyExample.Value[from..];
+        using IVoiceActivityDetector detector = new SileroVoiceActivityDetectorFactory(Settings).Create();
+        var since = new List<TimeSpan>();
+
+        for (int offset = 0; offset < samples.Length; offset += chunk)
+        {
+            detector.Accept(samples.AsMemory(offset, Math.Min(chunk, samples.Length - offset)));
+            if (detector.SpeakingSince is { } value)
+            {
+                since.Add(value);
+            }
+        }
+
+        since.ShouldNotBeEmpty();
+        since.ShouldAllBe(value => value >= TimeSpan.Zero);
+    }
+
     private static List<DetectedPhrase> Detect(float[] samples, int chunk)
     {
         using IVoiceActivityDetector detector = new SileroVoiceActivityDetectorFactory(Settings).Create();

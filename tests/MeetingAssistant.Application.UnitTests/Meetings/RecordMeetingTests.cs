@@ -211,6 +211,53 @@ public sealed class RecordMeetingTests : IDisposable
     }
 
     [Fact]
+    public async Task Record_WhenChunkClosesLongAnswerAndSilenceAfterIt_WritesAnswerEndForItsLine()
+    {
+        _harness.RunningMeeting();
+        _harness.RecognizerReturns(Text);
+        var source = new ScriptedSource(
+        [
+            ScriptedSource.Pause(Channel.Me, 13),
+            ScriptedSource.Seconds(Channel.Others, 10),
+            ScriptedSource.Pause(Channel.Others, 3),
+        ]);
+
+        await _harness.Recorder().Record(source, Token).WaitAsync(Limit, Token);
+
+        await _harness.WakeEvents.Received(1).AppendAnswerEnd(
+            new AnswerEnded(1, _harness.Time.GetUtcNow()),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Record_WhenOwnSpeechComesBeforeAnswerLineWritten_WritesAnswerEndOnlyAfterLine()
+    {
+        _harness.RunningMeeting();
+        _harness.RecognizerReturns(Text);
+        var lineWritten = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _harness.Transcript.Append(Arg.Any<Utterance>(), Arg.Any<CancellationToken>()).Returns(lineWritten.Task);
+        var source = new ScriptedSource(
+        [
+            ScriptedSource.Pause(Channel.Me, 10),
+            ScriptedSource.Seconds(Channel.Others, 10),
+            ScriptedSource.Pause(Channel.Others, 1),
+            ScriptedSource.Seconds(Channel.Me, 2),
+        ]);
+
+        Task<Result> recording = _harness.Recorder().Record(source, Token);
+        await source.Exhausted.WaitAsync(Limit, Token);
+
+        await _harness.WakeEvents.DidNotReceive().AppendAnswerEnd(Arg.Any<AnswerEnded>(), Arg.Any<CancellationToken>());
+
+        lineWritten.SetResult();
+        await recording.WaitAsync(Limit, Token);
+
+        await _harness.WakeEvents.Received(1).AppendAnswerEnd(
+            new AnswerEnded(1, _harness.Time.GetUtcNow()),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task Record_WhenNoMeeting_FailsWithNotRunningAndStopsFeeding()
     {
         _harness.RecognizerReturns(Text);

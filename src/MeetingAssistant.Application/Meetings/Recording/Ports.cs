@@ -50,6 +50,14 @@ public interface IVoiceActivityDetector : IDisposable
     /// Отдаёт фразу, которую оборвал конец звука.
     /// </summary>
     IReadOnlyList<DetectedPhrase> Flush();
+
+    /// <summary>
+    /// Начало идущей речи от начала звука канала по принятому звуку; <see langword="null"/> — канал молчит.
+    /// </summary>
+    /// <remarks>
+    /// Речь считается идущей и в паузе, пока детектор не закрыл фразу: конец речи виден только по тишине.
+    /// </remarks>
+    TimeSpan? SpeakingSince { get; }
 }
 
 /// <summary>

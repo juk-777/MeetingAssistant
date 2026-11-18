@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# То, что идёт в окне подсказок режима собеседования: окно роли из mode.json встречи (meeting-candidate или
+# meeting-interviewer), после конца — ожидание клавиши, чтобы последний ответ можно было дочитать. Окно открывает
+# meeting-mode.
+#
+# hint-window <каталог встречи> <путь к claude>
+set -uo pipefail
+
+[ $# -eq 2 ] || { echo "hint-window <каталог встречи> <путь к claude>" >&2; exit 2; }
+
+here="$(cd "$(dirname "$0")" && pwd)"
+mode=$(bash "$here/current-field" "$1/mode.json" mode 2> /dev/null) || mode=""
+case $mode in
+    interviewer) script=meeting-interviewer ;;
+    *) script=meeting-candidate ;;
+esac
+MEETING_CLAUDE=$2 bash "$here/$script" "$1"
+read -rsn1 -p "Окно можно закрыть: любая клавиша." || true

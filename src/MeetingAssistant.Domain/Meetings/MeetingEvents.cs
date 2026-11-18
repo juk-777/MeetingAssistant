@@ -16,6 +16,11 @@ public sealed record SessionWakeRequested(int UtteranceNumber, IReadOnlyList<Wak
     : IDomainEvent;
 
 /// <summary>
+/// Собеседник закончил ответ (<see cref="AnswerEndPolicy"/>); <see cref="UtteranceNumber"/> — последняя строка ответа.
+/// </summary>
+public sealed record AnswerEnded(int UtteranceNumber, DateTimeOffset At) : IDomainEvent;
+
+/// <summary>
 /// Встреча остановлена; <see cref="LastUtteranceNumber"/> — 0, если реплик не было.
 /// </summary>
 public sealed record MeetingStopped(int LastUtteranceNumber, DateTimeOffset At) : IDomainEvent;

@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+# Подсказка интервьюеру (режим собеседования, роль интервьюера): на конец ответа кандидата — оценка ответа и
+# уточняющие вопросы, один вызов модели без сессии, ответ печатается в это окно по мере прихода
+# (docs/specs/2026-11-17-interviewer-role.md).
+#
+# Повод — не каждая реплика, а конец ответа: событие `конец ответа` в events.log (процесс записи видит паузу и речь
+# «Я» по детектору речи) или отметка «оцени» в marks.log (пишет meeting-mark по слову в чате сессии). Ответ кандидата
+# для модели — строки «Собеседников» после последней дописанной подсказки: оборванная подсказка начала ответа не
+# сдвигает — кандидат продолжил, и прошлые строки остаются частью ответа.
+#
+# Новый повод обрывает недописанную подсказку. Первая строка уходит во всплывающее уведомление, каждая подсказка —
+# в interviewer.md каталога встречи. Режим, контекст и модель — mode.json, заметки — notes.md. `claude` — из
+# MEETING_CLAUDE, иначе из PATH. Поводы до запуска не разбираются. Скрипт выходит после конца записи.
+#
+# meeting-interviewer <каталог встречи>
+set -uo pipefail
+
+CONTEXT_LINES=30
+NOTES_LIMIT_BYTES=30000
+POLL_SECONDS=0.3
+# Сколько тактов ждать строку, на которую указывает событие: что WSL через drvfs видит файлы в порядке записи, не
+# проверялось (так же в meeting-watch).
+LINE_WAIT_POLLS=10
+# Сколько ждать недописанную подсказку после конца записи.
+FINISH_SECONDS=60
+DEFAULT_MODEL=opus
+ANSWER_END="конец ответа"
+MARK="оцени"
+
+[ $# -eq 1 ] || { echo "meeting-interviewer <каталог встречи>" >&2; exit 2; }
+[ -d "$1" ] || { echo "Нет каталога встречи: $1" >&2; exit 1; }
+
+here="$(cd "$(dirname "$0")" && pwd)"
+dir=$(cd "$1" && pwd)
+transcript="$dir/transcript.md"
+events="$dir/events.log"
+marks="$dir/marks.log"
+journal="$dir/interviewer.md"
+claude=${MEETING_CLAUDE:-claude}
+
+context=$(bash "$here/current-field" "$dir/mode.json" context 2> /dev/null) || context=""
+model=$(bash "$here/current-field" "$dir/mode.json" model 2> /dev/null) || model=$DEFAULT_MODEL
+[ -n "$model" ] || model=$DEFAULT_MODEL
+
+NO_ANSWER="(нет подсказки)"
+# Подсказка — только оценка ответа: правила не удерживают модель от пояснений, почему оценивать нечего, а
+# пояснение посреди собеседования всплыло бы уведомлением. Регистр — перечислением: класс [Вв] в локали C
+# сравнивал бы байты, а не буквы.
+# shellcheck disable=SC2034 # читает hint-answer
+HINT_FIRST_LINE='^(верно|Верно|неполно|Неполно|ошибка|Ошибка)'
+# shellcheck source=hint-answer
+source "$here/hint-answer"
+
+work=$(mktemp -d)
+answer_pid=""
+answer_header=""
+
+finish() {
+    cancel_answer
+    rm -rf "$work"
+}
+trap finish EXIT
+trap 'exit 130' INT TERM HUP
+
+line_count() {
+    if [ -f "$1" ]; then wc -l < "$1"; else echo 0; fi
+}
+
+# Номер последней полной строки транскрипта, 0 — строк нет.
+last_number() {
+    local count
+    count=$(complete_lines)
+    if [ "$count" -gt 0 ]; then head -n "$count" "$transcript" | tail -n 1 | cut -f1; else echo 0; fi
+}
+
+# Строки «Собеседников» с номером в (после; до] — без номера и времени распознавания.
+others_lines() {
+    head -n "$(complete_lines)" "$transcript" |
+        awk -F'\t' -v after="$1" -v upto="$2" '$1 > after && $1 <= upto && index($3, "] Собеседники: ")' | cut -f3-
+}
+
+# Правила роли — своим системным промптом, как у кандидата (docs/decisions.md, «Режим собеседования»).
+write_rules() {
+    {
+        echo "Ты подсказываешь интервьюеру на собеседовании. «Я» — интервьюер, «Собеседники» — кандидат (иногда и второй интервьюер: говорящих различает канал звука, а не голос)."
+        [ -z "$context" ] || echo "Контекст собеседования: $context"
+        if [ -s "$dir/notes.md" ]; then
+            echo
+            echo "Заметки интервьюера — вакансия, требования, резюме кандидата:"
+            head -c "$NOTES_LIMIT_BYTES" "$dir/notes.md"
+            echo
+        fi
+        echo
+        echo "На входе — последние реплики встречи и ответ кандидата. Всё, что ты пишешь, интервьюер видит в окне подсказок посимвольно. Отвечай только по-русски."
+        echo "Если кандидат ответил на вопрос или задание интервьюера — первая строка начинается ровно с одного из слов «верно», «неполно», «ошибка», дальше тире и одной фразой, чего не хватило или что неверно. Дальше 1–2 уточняющих вопроса кандидату строками с «- ». Без вступления и без пересказа ответа."
+        echo "Во всех остальных случаях — не ответ на вопрос интервьюера (вопрос кандидата, организационное), ответ оборван или по нему нечего оценить — весь ответ один символ «-». Других первых строк не бывает. Не объясняй, почему не оцениваешь: интервьюер увидит объяснение как подсказку."
+    } > "$work/rules"
+}
+
+# Запрос модели: последние реплики до конца ответа и сам ответ — строки «Собеседников» диапазона answer_from..upto.
+write_prompt() {
+    {
+        echo "Последние реплики встречи:"
+        head -n "$(complete_lines)" "$transcript" | awk -F'\t' -v upto="$upto" '$1 <= upto' |
+            tail -n "$CONTEXT_LINES" | cut -f3-
+        echo
+        echo "Ответ кандидата:"
+        others_lines "$answer_from" "$upto" | sed 's/^\[[^]]*\] Собеседники: //'
+    } > "$work/prompt"
+}
+
+# Подсказка по ответу до строки $upto с поводом $1; ответа нет — только строка в окне.
+hint() {
+    local reason=$1 last stamp
+    if [ -e "$work/answered" ]; then
+        answer_from=$(< "$work/answered")
+        rm -f "$work/answered"
+    fi
+    last=$(others_lines "$answer_from" "$upto" | tail -n 1)
+    if [ -z "$last" ]; then
+        printf '\n(%s: нового ответа кандидата нет)\n' "$reason"
+        return 0
+    fi
+    stamp=${last%% *}
+    start_answer "$stamp" "$reason" "$upto"
+}
+
+write_rules
+answer_from=$(last_number)
+events_read=$(line_count "$events")
+marks_read=$(line_count "$marks")
+event_waits=0
+echo "Подсказки интервьюеру: $(basename "$dir"). Подсказка — после ответа кандидата и по «$MARK» в чате сессии; после конца записи окно можно закрыть."
+
+while true; do
+    # Конец записи — до чтения поводов: строки и события до конца уже видны (как в meeting-candidate).
+    ended=""
+    if recording_ended; then ended=1; fi
+
+    reason=""
+    upto=""
+    count=$(line_count "$events")
+    while [ "$events_read" -lt "$count" ]; do
+        IFS=$'\t' read -r _ number kind < <(sed -n "$((events_read + 1))p" "$events")
+        if [ "$kind" = "$ANSWER_END" ]; then
+            # Строка события может ещё не дойти: ждём её несколько тактов, потом отвечаем по тому, что есть.
+            if [ "$(last_number)" -lt "$number" ] && [ "$event_waits" -lt "$LINE_WAIT_POLLS" ] && [ -z "$ended" ]; then
+                event_waits=$((event_waits + 1))
+                break
+            fi
+            reason=$ANSWER_END
+            upto=$number
+        fi
+        event_waits=0
+        events_read=$((events_read + 1))
+    done
+
+    count=$(line_count "$marks")
+    if [ "$marks_read" -lt "$count" ]; then
+        marks_read=$count
+        reason=$MARK
+        upto=$(last_number)
+    fi
+
+    [ -z "$reason" ] || hint "$reason"
+
+    if [ -n "$ended" ]; then
+        waited=0
+        while answer_running && [ "$waited" -lt "$FINISH_SECONDS" ]; do
+            sleep 1
+            waited=$((waited + 1))
+        done
+        echo
+        echo "Запись закончилась."
+        exit 0
+    fi
+    if [ -n "$answer_pid" ] && ! answer_running; then
+        wait "$answer_pid" 2> /dev/null
+        answer_pid=""
+    fi
+    sleep "$POLL_SECONDS"
+done
