@@ -129,7 +129,7 @@ public sealed class SpeechTests
     {
         const int chunk = SpeechAudio.SampleRate / 10;
         DetectedPhrase phrase = Detect(LazyExample.Value, chunk)[0];
-        int from = (int)(phrase.Start.TotalSeconds * SpeechAudio.SampleRate);
+        int from = (int)((phrase.Start.TotalSeconds + 0.5) * SpeechAudio.SampleRate);
         float[] samples = LazyExample.Value[from..];
         using IVoiceActivityDetector detector = new SileroVoiceActivityDetectorFactory(Settings).Create();
         var since = new List<TimeSpan>();
