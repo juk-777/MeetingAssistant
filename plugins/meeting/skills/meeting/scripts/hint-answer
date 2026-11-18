@@ -89,8 +89,8 @@ answer() {
             body=$(< "$work/answer")
             if [ -z "$failed" ] && ! is_hint "${body%%$'\n'*}"; then body=$NO_ANSWER; fi
             journal_entry "$stamp" "$text" "$body"
-            # Отметка вызывающего — признак, что ответ дописан, а не оборван.
-            [ ! -e "$work/mark" ] || mv "$work/mark" "$work/answered"
+            # Отметка вызывающего — признак, что ответ дописан, а не оборван; отказ модели ответом не считается.
+            [ -n "$failed" ] || [ ! -e "$work/mark" ] || mv "$work/mark" "$work/answered"
             rm -f "$work/running"
         }
 }

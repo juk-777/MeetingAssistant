@@ -49,13 +49,15 @@ public sealed class AnswerEndTests
     }
 
     [Fact]
-    public void Observe_WhenOwnSpeechStartedBeforeAnswerEnd_IsEchoAndDoesNotEndAnswer()
+    public void Observe_WhenOwnSpeechStartedBeforeAnswerEnd_EndsAnswerOnlyAfterItStops()
     {
-        Meeting meeting = WithAnswer(0, 10, out _);
+        Meeting meeting = WithAnswer(0, 10, out Utterance last);
 
-        meeting.Observe(Speaking(11, since: 6), Silent(11), Start);
-
+        meeting.Observe(Speaking(13, since: 9.5), Silent(13), Start);
         Ends(meeting).ShouldBeEmpty();
+
+        meeting.Observe(Silent(14), Silent(14), Start);
+        Ends(meeting).ShouldBe([new AnswerEnded(last.Number, Start)]);
     }
 
     [Fact]

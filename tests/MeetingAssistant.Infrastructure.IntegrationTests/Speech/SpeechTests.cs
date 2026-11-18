@@ -124,6 +124,29 @@ public sealed class SpeechTests
         observed.Where(o => o.Position > end + TimeSpan.FromSeconds(0.7)).ShouldAllBe(o => o.Since == null);
     }
 
+    [Fact]
+    public void SpeakingSince_WhenSpeechFromFirstSample_IsNotBeforeAudioStart()
+    {
+        const int chunk = SpeechAudio.SampleRate / 10;
+        DetectedPhrase phrase = Detect(LazyExample.Value, chunk)[0];
+        int from = (int)(phrase.Start.TotalSeconds * SpeechAudio.SampleRate);
+        float[] samples = LazyExample.Value[from..];
+        using IVoiceActivityDetector detector = new SileroVoiceActivityDetectorFactory(Settings).Create();
+        var since = new List<TimeSpan>();
+
+        for (int offset = 0; offset < samples.Length; offset += chunk)
+        {
+            detector.Accept(samples.AsMemory(offset, Math.Min(chunk, samples.Length - offset)));
+            if (detector.SpeakingSince is { } value)
+            {
+                since.Add(value);
+            }
+        }
+
+        since.ShouldNotBeEmpty();
+        since.ShouldAllBe(value => value >= TimeSpan.Zero);
+    }
+
     private static List<DetectedPhrase> Detect(float[] samples, int chunk)
     {
         using IVoiceActivityDetector detector = new SileroVoiceActivityDetectorFactory(Settings).Create();

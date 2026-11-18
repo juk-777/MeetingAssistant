@@ -2022,6 +2022,7 @@ interviewer_WhenAnswerEnds_HintsOnCandidateLinesAndJournals() {
     grep -qF 'подсказываешь интервьюеру' "$work/claude.system" || { cat "$work/claude.system"; return 1; }
     grep -qF 'бэкенд' "$work/claude.system" || { cat "$work/claude.system"; return 1; }
     grep -qF -- '--model sonnet' "$work/claude.args" || { cat "$work/claude.args"; return 1; }
+    wait_file_text "$work/notify.all" 'неполно — нет идемпотентности' || return 1
     [ "$(cat "$work/notify.all")" = 'неполно — нет идемпотентности' ] || { cat "$work/notify.all"; return 1; }
 }
 
@@ -2088,6 +2089,64 @@ interviewer_WhenHintCompleted_NextAnswerStartsAfterIt() {
     expect_exit "$interviewer_pid" 0 || return 1
     [ "$(answer_part "$work/claude.prompt")" = 'И ещё храним ключ идемпотентности.' ] || { cat "$work/claude.prompt"; return 1; }
     [ ! -e "$work/notify.all" ] || { echo "уведомление на «-»: $(cat "$work/notify.all")"; return 1; }
+}
+
+interviewer_WhenAnswerEndBeforeItsLine_WaitsForLine() {
+    new_meeting
+    stub_claude 0 'верно'
+    start_interviewer
+
+    say 1 Собеседники 'Пишем событие в outbox в той же транзакции.'
+    answer_end 2
+    sleep 1
+    say 2 Собеседники 'Потом отдельный процесс публикует.'
+    wait_file_text "$meeting/interviewer.md" 'верно' || return 1
+    end_of_recording 2
+
+    expect_exit "$interviewer_pid" 0 || return 1
+    local expected
+    expected=$(printf '%s\n' 'Пишем событие в outbox в той же транзакции.' 'Потом отдельный процесс публикует.')
+    [ "$(answer_part "$work/claude.prompt")" = "$expected" ] || { cat "$work/claude.prompt"; return 1; }
+}
+
+interviewer_WhenMarkRightAfterHint_DoesNotCallModel() {
+    new_meeting
+    stub_claude 0 'верно'
+    start_interviewer
+
+    say 1 Собеседники 'Пишем событие в outbox в той же транзакции.'
+    answer_end 1
+    wait_file_text "$meeting/interviewer.md" 'верно' || return 1
+    bash "$bin/meeting-mark" "$meeting"
+    wait_file_text "$work/interviewer.out" 'нового ответа кандидата нет' || return 1
+    end_of_recording 1
+
+    expect_exit "$interviewer_pid" 0 || return 1
+    [ "$(wc -l < "$work/claude.args")" -eq 1 ] || { cat "$work/claude.args"; return 1; }
+}
+
+interviewer_WhenModelFailed_NextHintKeepsAnswerStart() {
+    new_meeting
+    stub_claude 0 'неполно'
+    mv "$work/claude" "$work/claude.ok"
+    printf '#!/usr/bin/env bash\nif [ -e "%s/claude.failed" ]; then exec "%s/claude.ok" "$@"; fi\n: > "%s/claude.failed"\ncat > /dev/null\necho "Invalid API key" >&2\nexit 1\n' \
+        "$work" "$work" "$work" > "$work/claude"
+    chmod +x "$work/claude"
+    rm -f "$work/claude.failed"
+    start_interviewer
+
+    say 1 Собеседники 'Пишем событие в outbox в той же транзакции.'
+    answer_end 1
+    wait_file_text "$meeting/interviewer.md" '(модель не ответила' || return 1
+    say 2 Собеседники 'И ещё храним ключ идемпотентности.'
+    bash "$bin/meeting-mark" "$meeting"
+    wait_file_text "$meeting/interviewer.md" 'неполно' || return 1
+    end_of_recording 2
+
+    expect_exit "$interviewer_pid" 0 || return 1
+    local expected
+    expected=$(printf '%s\n' 'Пишем событие в outbox в той же транзакции.' 'И ещё храним ключ идемпотентности.')
+    [ "$(answer_part "$work/claude.prompt")" = "$expected" ] || { cat "$work/claude.prompt"; return 1; }
 }
 
 interviewer_WhenFirstLineIsNotAssessment_JournalsNoHintWithoutNotification() {

@@ -1,10 +1,11 @@
 """Стерео для `meeting replay` из собеседования в одну дорожку и его разметки по смыслу (#11, роль интервьюера).
 
-Запуск: python interview_stereo.py <звук собеседования.wav> — 16 кГц моно; разметка —
+Запуск: python interview_stereo.py <звук собеседования.wav> [--silence] — 16 кГц моно; разметка —
 prototype/out/interviews-text/<имя>.tsv и `<имя>.labels` (interview_transcript.py и разметка по смыслу). Фразы
 интервьюера (I) идут в левый канал («Я»), кандидата и обоих сразу (C, M) — в правый («Собеседники»), вне фраз — шум
 комнаты около −60 дБ полной шкалы, а не цифровая тишина: на нулях Silero теряет начало фразы, и короткие фразы,
-вырезанные впритык, пропадают (`docs/pitfalls.md`, sherpa-onnx VAD) — в живом канале звонка нулей нет. Пишет
+вырезанные впритык, пропадают (`docs/pitfalls.md`, sherpa-onnx VAD) — в живом канале звонка нулей нет.
+`--silence` — вне фраз цифровая тишина (строка «цифровая тишина» таблицы в `docs/measurements.md`). Пишет
 `<имя>.stereo.wav` рядом со входом (samples/ вне git).
 """
 import os
@@ -17,9 +18,10 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 LABELLED = os.path.join(ROOT, "out", "interviews-text")
 RATE = 16000
 
-if len(sys.argv) != 2:
-    sys.exit("Запуск: python interview_stereo.py <звук собеседования.wav>")
+if len(sys.argv) not in (2, 3) or sys.argv[2:] not in ([], ["--silence"]):
+    sys.exit("Запуск: python interview_stereo.py <звук собеседования.wav> [--silence]")
 path = sys.argv[1]
+silence = sys.argv[2:] == ["--silence"]
 name = os.path.splitext(os.path.basename(path))[0]
 with wave.open(path) as w:
     if w.getframerate() != RATE or w.getnchannels() != 1 or w.getsampwidth() != 2:
@@ -34,8 +36,11 @@ with open(os.path.join(LABELLED, name + ".labels"), encoding="utf-8") as f:
             labels[int(number)] = label
 
 NOISE_LEVEL = 30  # СКО шума в отсчётах PCM 16: около −60 дБ полной шкалы
-noise = np.random.default_rng(0).normal(0, NOISE_LEVEL, (len(mono), 2))
-stereo = np.clip(noise, -32768, 32767).astype(np.int16)
+if silence:
+    stereo = np.zeros((len(mono), 2), dtype=np.int16)
+else:
+    noise = np.random.default_rng(0).normal(0, NOISE_LEVEL, (len(mono), 2))
+    stereo = np.clip(noise, -32768, 32767).astype(np.int16)
 with open(os.path.join(LABELLED, name + ".tsv"), encoding="utf-8") as f:
     for line in f:
         number, start, end, _ = line.split("\t", 3)

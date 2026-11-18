@@ -72,7 +72,8 @@ uv venv -q -p 3.12 .venv && uv pip install -q -p .venv sherpa-onnx==2.0.1 numpy 
     CAM++ — `docs/measurements.md`, «Модели»); вывод — `out/interviews-text/<имя>.tsv`, текст живых людей, вне git.
     Разметку говорящих по смыслу (`<имя>.labels`: `номер<TAB>I|C|M`) кладут рядом руками или агентом;
   - `interview_truth.py <имя>...` — паузы внутри ответов и до речи интервьюера по разметке, таблица порога тишины;
-  - `interview_stereo.py <запись>` — стерео для `meeting replay`: интервьюер — левый канал, кандидат — правый;
+  - `interview_stereo.py <запись> [--silence]` — стерео для `meeting replay`: интервьюер — левый канал, кандидат —
+    правый, вне фраз шум около −60 дБ, с `--silence` — цифровая тишина;
   - `interview_replay_check.py <имя> <каталог встречи replay>` — сверка событий `конец ответа` replay в реальном
     темпе с концами ответов разметки.
 

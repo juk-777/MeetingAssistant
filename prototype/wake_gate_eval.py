@@ -23,6 +23,8 @@ import tempfile
 import time
 
 END_OF_RECORDING = "конец записи"
+# Сессию не будит — его читает окно интервьюера (`meeting-watch` его пропускает).
+ANSWER_END = "конец ответа"
 MIN_QUESTION_WORDS = 3  # WakePolicy.MinQuestionWords
 SEEN_LINES = 15
 NEW_LINES = 40
@@ -104,7 +106,7 @@ def cases(run):
     previous = 0
     for epoch, number, reasons in events:
         number = int(number)
-        if reasons == END_OF_RECORDING:
+        if reasons in (END_OF_RECORDING, ANSWER_END):
             continue
         label = hints.get(round(float(epoch), 3))
         if label is None:
