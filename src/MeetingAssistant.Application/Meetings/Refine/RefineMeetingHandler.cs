@@ -76,6 +76,12 @@ internal sealed class RefineMeetingHandler(
             }
         }
 
+        // Пустой второй транскрипт выдал бы себя за результат: протокол свёл бы с ним живой.
+        if (refinement.LineCount == 0)
+        {
+            return Result.Failure(MeetingScenarioErrors.NothingRecognized(refinement.Speech));
+        }
+
         foreach (Utterance utterance in refinement.InRecordingOrder())
         {
             await draft.Append(utterance, cancellationToken);
@@ -98,8 +104,11 @@ internal sealed class RefineMeetingHandler(
         private readonly Dictionary<Channel, SpeechGroup> _groups = [];
         private readonly List<(Channel Channel, SpeechSpan Span, string Text, DateTimeOffset RecognizedAt)> _lines = [];
         private readonly long _started = timeProvider.GetTimestamp();
-        private TimeSpan _speech;
         private TimeSpan _position;
+
+        public int LineCount => _lines.Count;
+
+        public TimeSpan Speech { get; private set; }
 
         public async Task Add(Channel channel, IReadOnlyList<DetectedPhrase> phrases, CancellationToken cancellationToken)
         {
@@ -150,11 +159,11 @@ internal sealed class RefineMeetingHandler(
                 _lines.Add((channel, group.ToRecording(segment), segment.Text.Trim(), recognizedAt));
             }
 
-            _speech += group.Speech;
+            Speech += group.Speech;
 
             // Кусок редкого канала кончается раньше уже пройденного другим каналом: ход назад не идёт.
             _position = group.End > _position ? group.End : _position;
-            progress.Report(new RefinePosition(_position, duration, _lines.Count, _speech, timeProvider.GetElapsedTime(_started)));
+            progress.Report(new RefinePosition(_position, duration, _lines.Count, Speech, timeProvider.GetElapsedTime(_started)));
             group.Clear();
         }
     }

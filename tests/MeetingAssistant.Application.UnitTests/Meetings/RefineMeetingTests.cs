@@ -1,3 +1,4 @@
+using MeetingAssistant.Application.Meetings;
 using MeetingAssistant.Application.Meetings.Recording;
 using MeetingAssistant.Application.Meetings.Refine;
 using MeetingAssistant.Domain.Meetings;
@@ -154,6 +155,36 @@ public sealed class RefineMeetingTests : IDisposable
         await Refine();
 
         Draft().Lines.Select(line => (line.Number, line.Span.Start, line.Text)).ShouldBe([(1, Seconds(1), Text)]);
+    }
+
+    [Fact]
+    public async Task Handle_WhenSpeechButNoTextRecognized_FailsAndAbandonsTranscript()
+    {
+        Recording(ScriptedSource.Seconds(Channel.Me, 2), ScriptedSource.Seconds(Channel.Others, 1));
+        RecognizerReturns(new RecognizedSegment(Seconds(0), Seconds(1), " "));
+
+        Result result = await Refine();
+
+        result.Error.Code.ShouldBe(MeetingScenarioErrors.NothingRecognizedCode);
+        result.Error.Description.ShouldContain("речь 3 с");
+        DraftTranscript draft = Draft();
+        draft.Lines.ShouldBeEmpty();
+        draft.Completed.ShouldBeFalse();
+        draft.Abandoned.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Handle_WhenRecordingHasNoSpeech_FailsWithoutRecognizing()
+    {
+        Recording(ScriptedSource.Pause(Channel.Me, 3), ScriptedSource.Pause(Channel.Others, 3));
+        RecognizerReturnsWhole(Text);
+
+        Result result = await Refine();
+
+        result.Error.Code.ShouldBe(MeetingScenarioErrors.NothingRecognizedCode);
+        result.Error.Description.ShouldContain("речь 0 с");
+        _recognized.ShouldBeEmpty();
+        Draft().Completed.ShouldBeFalse();
     }
 
     [Fact]
