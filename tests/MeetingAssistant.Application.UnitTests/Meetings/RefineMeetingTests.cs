@@ -166,7 +166,7 @@ public sealed class RefineMeetingTests : IDisposable
         Result result = await Refine();
 
         result.Error.Code.ShouldBe(MeetingScenarioErrors.NothingRecognizedCode);
-        result.Error.Description.ShouldContain("речь 3 с");
+        result.Error.Description.ShouldContain("речь 3.0 с");
         DraftTranscript draft = Draft();
         draft.Lines.ShouldBeEmpty();
         draft.Completed.ShouldBeFalse();
@@ -182,7 +182,7 @@ public sealed class RefineMeetingTests : IDisposable
         Result result = await Refine();
 
         result.Error.Code.ShouldBe(MeetingScenarioErrors.NothingRecognizedCode);
-        result.Error.Description.ShouldContain("речь 0 с");
+        result.Error.Description.ShouldContain("речь 0.0 с");
         _recognized.ShouldBeEmpty();
         Draft().Completed.ShouldBeFalse();
     }

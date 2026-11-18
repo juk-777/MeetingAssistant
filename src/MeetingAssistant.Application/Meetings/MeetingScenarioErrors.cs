@@ -27,5 +27,5 @@ public static class MeetingScenarioErrors
             NothingRecognizedCode,
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"Whisper не распознал ни одной фразы (речь {speech.TotalSeconds:F0} с): transcript.whisper.md не записан, прежний не тронут."));
+                $"Whisper не распознал ни одной фразы (речь {speech.TotalSeconds:F1} с): transcript.whisper.md не записан, прежний не тронут."));
 }
