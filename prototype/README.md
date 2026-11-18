@@ -55,6 +55,8 @@ uv venv -q -p 3.12 .venv && uv pip install -q -p .venv sherpa-onnx==2.0.1 numpy 
   `terms-reading.terms.txt` — эталонный список терминов по порядку (`docs/measurements.md`, «Английские термины»).
 - `channel_offset.py <audio.wav> [окно, с] [шаг, с]` — смещение каналов встречи по взаимной корреляции, когда
   микрофон слышит динамики (`docs/measurements.md`, «Смещение каналов»).
+- `vad_lengths.py <max_speech_duration, с> <звук.wav>...` — длины фраз Silero VAD с параметрами приложения
+  (`docs/measurements.md`, «Длина фраз VAD»).
 - `pulse_pace.py <устройство> <пакетов> <app|server>` — темп записи с сервера звука Linux пакетами приложения
   (`docs/measurements.md`, «Запись с сервера звука Linux»). Только стандартная библиотека и `libpulse0`.
 - `fast_hint.sh <модель> <effort> <прогонов>` — один вызов модели быстрым путём: время до первого текста и до конца

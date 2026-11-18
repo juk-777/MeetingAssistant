@@ -127,9 +127,10 @@
 | `docs/architecture.md` | Устройство: компоненты, форматы файлов, структура кода |
 | `docs/decisions.md` | Решения с причинами и отвергнутым, проверенные факты |
 | `docs/measurements.md` | Замеры с условиями |
+| `docs/pitfalls.md` | Грабли платформы: библиотеки, ОС, инструменты |
 | `docs/specs/` | Спеки слайсов, шаблон `_template.md` |
 | `docs/plans/` | Планы слайсов, шаблон `_template.md` |
 
 Все файлы под git видны в решении, в папке «Solution Items». `.slnx` перечисляет файлы поимённо, поэтому
-добавил или удалил файл в корне, `docs/`, `scripts/`, `skills/` или `prototype/` — `./scripts/slnx-folders.sh` после
+добавил или удалил файл в корне, `docs/`, `scripts/`, `plugins/`, `prototype/` или `tests/meeting-skill/` — `./scripts/slnx-folders.sh` после
 `git add`, тем же коммитом.
