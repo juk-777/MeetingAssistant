@@ -1,7 +1,8 @@
 # Общая часть окон подсказок (meeting-candidate, meeting-interviewer): вызов модели с ответом потоком в окно,
 # уведомление первой строкой, журнал, обрыв недописанного ответа. Подключается через source; до этого скрипт роли
 # задаёт here, dir, transcript, events, journal, claude, model, work, answer_pid, answer_header, NO_ANSWER и функцию
-# write_prompt <текст>, а правила роли кладёт в $work/rules.
+# write_prompt <текст>, а правила роли кладёт в $work/rules. HINT_FIRST_LINE — образец первой строки подсказки
+# (регулярное выражение bash), если роль его задаёт.
 #
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # переменные задаёт скрипт роли
@@ -60,7 +61,7 @@ decode_stream() {
 
 # Ответ на одну реплику: печать по мере прихода, уведомление первой строкой, запись в журнал. Идёт в фоне.
 answer() {
-    local stamp=$1 text=$2 char line="" notified=""
+    local stamp=$1 text=$2 char line="" notified="" failed="" body
     : > "$work/answer"
     "$claude" -p --model "$model" --effort low --tools "" --strict-mcp-config --setting-sources "" \
         --disable-slash-commands --no-session-persistence --system-prompt-file "$work/rules" \
@@ -81,10 +82,13 @@ answer() {
             # Пустой ответ — модель не ответила (нет входа, лимит, сеть, неверная модель): причину видно, а не тишину.
             if [ ! -s "$work/answer" ]; then
                 printf '(модель не ответила: %s)' "$(tr '\n' ' ' < "$work/error" | cut -c1-200)" | tee "$work/answer"
+                failed=1
             fi
             [ -n "$notified" ] || notify "$line"
             echo
-            journal_entry "$stamp" "$text" "$(< "$work/answer")"
+            body=$(< "$work/answer")
+            if [ -z "$failed" ] && ! is_hint "${body%%$'\n'*}"; then body=$NO_ANSWER; fi
+            journal_entry "$stamp" "$text" "$body"
             # Отметка вызывающего — признак, что ответ дописан, а не оборван.
             [ ! -e "$work/mark" ] || mv "$work/mark" "$work/answered"
             rm -f "$work/running"
@@ -97,18 +101,22 @@ answer_running() {
     [ -e "$work/running" ]
 }
 
-# Ответ «-» — модель решила, что отвечать не на что: уведомлять нечем.
+# Подсказка ли ответ — по первой строке. «-» — модель решила, что отвечать не на что; у роли с образцом первой
+# строки (HINT_FIRST_LINE) несовпавшая строка — пояснение модели, почему она не подсказывает, а не подсказка.
+is_hint() {
+    [ -n "$1" ] && [ "$1" != "-" ] || return 1
+    [ -z "${HINT_FIRST_LINE:-}" ] || [[ $1 =~ $HINT_FIRST_LINE ]]
+}
+
 notify() {
-    [ -n "$1" ] && [ "$1" != "-" ] || return 0
+    is_hint "$1" || return 0
     # Вход — /dev/null: фоновая задача может унаследовать поток ответа (так бывает при set -m), и powershell.exe
     # съел бы его кусок.
     bash "$here/meeting-notify" "$1" < /dev/null > /dev/null 2>&1 &
 }
 
 journal_entry() {
-    local body=$3
-    [ "$body" != "-" ] || body=$NO_ANSWER
-    printf '## %s %s\n\n%s\n\n' "$1" "$2" "$body" >> "$journal"
+    printf '## %s %s\n\n%s\n\n' "$1" "$2" "$3" >> "$journal"
 }
 
 cancel_answer() {

@@ -2041,13 +2041,13 @@ interviewer_WhenOthersSpeakWithoutAnswerEnd_DoesNotCallModel() {
 
 interviewer_WhenMarkWritten_HintsOnAnswerSoFar() {
     new_meeting
-    stub_claude 0 'верно — по делу'
+    stub_claude 0 'Верно — по делу'
     start_interviewer
 
     say 1 Собеседники 'Пишем событие в outbox в той же транзакции.'
     wait_lines "$work/interviewer.out" 1
     bash "$bin/meeting-mark" "$meeting"
-    wait_file_text "$meeting/interviewer.md" 'верно — по делу' || return 1
+    wait_file_text "$meeting/interviewer.md" 'Верно — по делу' || return 1
     end_of_recording 1
 
     expect_exit "$interviewer_pid" 0 || return 1
@@ -2088,6 +2088,22 @@ interviewer_WhenHintCompleted_NextAnswerStartsAfterIt() {
     expect_exit "$interviewer_pid" 0 || return 1
     [ "$(answer_part "$work/claude.prompt")" = 'И ещё храним ключ идемпотентности.' ] || { cat "$work/claude.prompt"; return 1; }
     [ ! -e "$work/notify.all" ] || { echo "уведомление на «-»: $(cat "$work/notify.all")"; return 1; }
+}
+
+interviewer_WhenFirstLineIsNotAssessment_JournalsNoHintWithoutNotification() {
+    new_meeting
+    stub_claude 0 'Ответ оборван — оценивать нечего.' '\n- Что дальше?'
+    start_interviewer
+
+    say 1 Собеседники 'Пишем событие в outbox в той же транзакции.'
+    answer_end 1
+    end_of_recording 1
+
+    expect_exit "$interviewer_pid" 0 || return 1
+    [ "$(cat "$meeting/interviewer.md")" = "$(printf '## [00:00:01] конец ответа\n\n(нет подсказки)')" ] ||
+        { cat "$meeting/interviewer.md"; return 1; }
+    sleep 0.3
+    [ ! -e "$work/notify.all" ] || { echo "уведомление: $(cat "$work/notify.all")"; return 1; }
 }
 
 hintwindow_WhenInterviewerMode_RunsInterviewerWindow() {
