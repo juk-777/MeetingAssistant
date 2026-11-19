@@ -1,3 +1,4 @@
+using System.Globalization;
 using MeetingAssistant.Domain.Meetings;
 using MeetingAssistant.SharedKernel;
 
@@ -18,4 +19,13 @@ public static class MeetingScenarioErrors
 
     public static Error AudioSourceFailed(string reason) =>
         new(AudioSourceFailedCode, $"Звук пропал, встреча остановлена: {reason}");
+
+    public const string NothingRecognizedCode = "Refine.NothingRecognized";
+
+    public static Error NothingRecognized(TimeSpan speech) =>
+        new(
+            NothingRecognizedCode,
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Whisper не распознал ни одной фразы (речь {speech.TotalSeconds:F1} с): transcript.whisper.md не записан, прежний не тронут."));
 }
