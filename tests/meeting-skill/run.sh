@@ -86,6 +86,17 @@ start_watch() {
     watchers+=("$watch_pid")
 }
 
+# attach_watch <каталог проекта> <файл вывода>: первое подключение. Вывода до первого события нет — ждём, пока
+# meeting-watch сохранит состояние: строки и события после этого он не пропустит.
+attach_watch() {
+    local states="$XDG_STATE_HOME/meeting-assistant" before deadline=$((SECONDS + LIMIT_SECONDS))
+    before=$(find "$states" -type f 2>/dev/null | wc -l)
+    start_watch "$1" "$2"
+    while [ "$(find "$states" -type f 2>/dev/null | wc -l)" -le "$before" ] && [ $SECONDS -lt $deadline ]; do
+        sleep 0.1
+    done
+}
+
 stop_watch() {
     kill "$watch_pid" 2>/dev/null
     wait "$watch_pid" 2>/dev/null
@@ -170,53 +181,55 @@ run() {
     stop_watchers
 }
 
-watch_WhenFirstAttached_GivesCompleteLinesSoFarWithoutPastEvents() {
+watch_WhenFirstAttached_GivesNothingUntilEventThenLinesFromStartWithoutPastEvents() {
     new_meeting
     utterance 1
     utterance 2
     event 2
     partial_utterance 3
-    start_watch "$work/project" "$work/out"
+    attach_watch "$work/project" "$work/out"
+    sleep 1
+    [ ! -s "$work/out" ] || { echo "вывод до события:"; cat "$work/out"; return 1; }
 
-    expect_output "$work/out" $'начало\t2' "$(line 1)" "$(line 2)"
+    finish_utterance 3
+    event 3
+
+    expect_output "$work/out" "$(event_header 3)" "$(line 1)" "$(line 2)" "$(line 3)"
 }
 
 watch_WhenEventArrives_GivesAllLinesSinceLastRead() {
     new_meeting
     utterance 1
-    start_watch "$work/project" "$work/out"
-    wait_lines "$work/out" 2
+    attach_watch "$work/project" "$work/out"
 
     utterance 2
     utterance 3
     event 3
 
-    expect_output "$work/out" $'начало\t1' "$(line 1)" "$(event_header 3)" "$(line 2)" "$(line 3)"
+    expect_output "$work/out" "$(event_header 3)" "$(line 1)" "$(line 2)" "$(line 3)"
 }
 
 watch_WhenLineUnfinished_GivesItWithNextEvent() {
     new_meeting
-    start_watch "$work/project" "$work/out"
-    wait_lines "$work/out" 1
+    attach_watch "$work/project" "$work/out"
 
     utterance 1
     partial_utterance 2
     event 1
-    wait_lines "$work/out" 3
+    wait_lines "$work/out" 2
     finish_utterance 2
     utterance 3
     event 3
 
-    expect_output "$work/out" $'начало\t0' "$(event_header 1)" "$(line 1)" "$(event_header 3)" "$(line 2)" "$(line 3)"
+    expect_output "$work/out" "$(event_header 1)" "$(line 1)" "$(event_header 3)" "$(line 2)" "$(line 3)"
 }
 
 watch_WhenRestarted_GivesEventWrittenWhileDownOnce() {
     new_meeting
-    start_watch "$work/project" "$work/first"
-    wait_lines "$work/first" 1
+    attach_watch "$work/project" "$work/first"
     utterance 1
     event 1
-    wait_lines "$work/first" 3
+    wait_lines "$work/first" 2
     stop_watch
 
     utterance 2
@@ -228,21 +241,19 @@ watch_WhenRestarted_GivesEventWrittenWhileDownOnce() {
 
 watch_WhenEndOfRecording_GivesRemainingLinesAndExits() {
     new_meeting
-    start_watch "$work/project" "$work/out"
-    wait_lines "$work/out" 1
+    attach_watch "$work/project" "$work/out"
 
     utterance 1
     end_of_recording 1
 
-    expect_output "$work/out" $'начало\t0' "$(end_header 1)" "$(line 1)" || return 1
+    expect_output "$work/out" "$(end_header 1)" "$(line 1)" || return 1
     expect_exit "$watch_pid" 0
 }
 
 watch_WhenRestartedAfterEnd_ExitsWithoutRepeatingLines() {
     new_meeting
     utterance 1
-    start_watch "$work/project" "$work/first"
-    wait_lines "$work/first" 2
+    attach_watch "$work/project" "$work/first"
     utterance 2
     end_of_recording 2
     expect_exit "$watch_pid" 0 || return 1
@@ -253,42 +264,46 @@ watch_WhenRestartedAfterEnd_ExitsWithoutRepeatingLines() {
     expect_output "$work/second" "$(end_header 2)"
 }
 
-watch_WhenRestartedBeforeFirstEvent_DoesNotRepeatStart() {
+watch_WhenRestartedBeforeFirstEvent_GivesEarlierLinesWithFirstEvent() {
     new_meeting
     utterance 1
-    start_watch "$work/project" "$work/first"
-    wait_lines "$work/first" 2
+    event 1
+    attach_watch "$work/project" "$work/first"
     stop_watch
 
     utterance 2
     event 2
     start_watch "$work/project" "$work/second"
 
-    expect_output "$work/second" "$(event_header 2)" "$(line 2)"
+    expect_output "$work/second" "$(event_header 2)" "$(line 1)" "$(line 2)" || return 1
+    [ ! -s "$work/first" ] || { echo "первый запуск:"; cat "$work/first"; return 1; }
 }
 
 watch_WhenEventAheadOfTranscript_WaitsForItsLine() {
     new_meeting
-    start_watch "$work/project" "$work/out"
-    wait_lines "$work/out" 1
+    attach_watch "$work/project" "$work/out"
 
     event 1
     sleep 1
     utterance 1
 
-    expect_output "$work/out" $'начало\t0' "$(event_header 1)" "$(line 1)"
+    expect_output "$work/out" "$(event_header 1)" "$(line 1)"
 }
 
 watch_WhenTwoProjects_ReadIndependently() {
     new_meeting
     utterance 1
-    start_watch "$work/project-a" "$work/a"
-    expect_output "$work/a" $'начало\t1' "$(line 1)" || return 1
+    attach_watch "$work/project-a" "$work/a"
+    utterance 2
+    event 2
+    expect_output "$work/a" "$(event_header 2)" "$(line 1)" "$(line 2)" || return 1
     stop_watch
 
-    start_watch "$work/project-b" "$work/b"
+    attach_watch "$work/project-b" "$work/b"
+    utterance 3
+    event 3
 
-    expect_output "$work/b" $'начало\t1' "$(line 1)"
+    expect_output "$work/b" "$(event_header 3)" "$(line 1)" "$(line 2)" "$(line 3)"
 }
 
 # stub_paths [каталог] [ответ]: заглушка перевода путей под обоими именами — cygpath (Git Bash) и wslpath (WSL),
@@ -1959,15 +1974,14 @@ linuxmode_WhenNoTerminal_RefusesWithCommandToRun() {
 watch_WhenAnswerEndEvent_DoesNotWakeSessionAndGivesLinesWithNextEvent() {
     new_meeting
     utterance 1
-    start_watch "$work/project" "$work/out"
-    wait_lines "$work/out" 2
+    attach_watch "$work/project" "$work/out"
 
     utterance 2
     printf '1762774262.002\t2\tконец ответа\n' >> "$meeting/events.log"
     utterance 3
     event 3
 
-    expect_output "$work/out" $'начало\t1' "$(line 1)" "$(event_header 3)" "$(line 2)" "$(line 3)"
+    expect_output "$work/out" "$(event_header 3)" "$(line 1)" "$(line 2)" "$(line 3)"
 }
 
 mark_WhenCalled_AppendsEpochLine() {
