@@ -92,7 +92,8 @@ attach_watch() {
     local states="$XDG_STATE_HOME/meeting-assistant" before deadline=$((SECONDS + LIMIT_SECONDS))
     before=$(find "$states" -type f 2>/dev/null | wc -l)
     start_watch "$1" "$2"
-    while [ "$(find "$states" -type f 2>/dev/null | wc -l)" -le "$before" ] && [ $SECONDS -lt $deadline ]; do
+    while [ "$(find "$states" -type f 2>/dev/null | wc -l)" -le "$before" ]; do
+        [ $SECONDS -lt $deadline ] || { echo "meeting-watch не сохранил состояние"; return 1; }
         sleep 0.1
     done
 }
@@ -187,7 +188,7 @@ watch_WhenFirstAttached_GivesNothingUntilEventThenLinesFromStartWithoutPastEvent
     utterance 2
     event 2
     partial_utterance 3
-    attach_watch "$work/project" "$work/out"
+    attach_watch "$work/project" "$work/out" || return 1
     sleep 1
     [ ! -s "$work/out" ] || { echo "вывод до события:"; cat "$work/out"; return 1; }
 
@@ -200,7 +201,7 @@ watch_WhenFirstAttached_GivesNothingUntilEventThenLinesFromStartWithoutPastEvent
 watch_WhenEventArrives_GivesAllLinesSinceLastRead() {
     new_meeting
     utterance 1
-    attach_watch "$work/project" "$work/out"
+    attach_watch "$work/project" "$work/out" || return 1
 
     utterance 2
     utterance 3
@@ -211,7 +212,7 @@ watch_WhenEventArrives_GivesAllLinesSinceLastRead() {
 
 watch_WhenLineUnfinished_GivesItWithNextEvent() {
     new_meeting
-    attach_watch "$work/project" "$work/out"
+    attach_watch "$work/project" "$work/out" || return 1
 
     utterance 1
     partial_utterance 2
@@ -226,7 +227,7 @@ watch_WhenLineUnfinished_GivesItWithNextEvent() {
 
 watch_WhenRestarted_GivesEventWrittenWhileDownOnce() {
     new_meeting
-    attach_watch "$work/project" "$work/first"
+    attach_watch "$work/project" "$work/first" || return 1
     utterance 1
     event 1
     wait_lines "$work/first" 2
@@ -241,7 +242,7 @@ watch_WhenRestarted_GivesEventWrittenWhileDownOnce() {
 
 watch_WhenEndOfRecording_GivesRemainingLinesAndExits() {
     new_meeting
-    attach_watch "$work/project" "$work/out"
+    attach_watch "$work/project" "$work/out" || return 1
 
     utterance 1
     end_of_recording 1
@@ -250,10 +251,23 @@ watch_WhenEndOfRecording_GivesRemainingLinesAndExits() {
     expect_exit "$watch_pid" 0
 }
 
+watch_WhenAttachedAfterEnd_GivesEndWithAllLinesAndExits() {
+    new_meeting
+    utterance 1
+    utterance 2
+    event 2
+    utterance 3
+    end_of_recording 3
+    start_watch "$work/project" "$work/out"
+
+    expect_exit "$watch_pid" 0 || return 1
+    expect_output "$work/out" "$(end_header 3)" "$(line 1)" "$(line 2)" "$(line 3)"
+}
+
 watch_WhenRestartedAfterEnd_ExitsWithoutRepeatingLines() {
     new_meeting
     utterance 1
-    attach_watch "$work/project" "$work/first"
+    attach_watch "$work/project" "$work/first" || return 1
     utterance 2
     end_of_recording 2
     expect_exit "$watch_pid" 0 || return 1
@@ -268,7 +282,7 @@ watch_WhenRestartedBeforeFirstEvent_GivesEarlierLinesWithFirstEvent() {
     new_meeting
     utterance 1
     event 1
-    attach_watch "$work/project" "$work/first"
+    attach_watch "$work/project" "$work/first" || return 1
     stop_watch
 
     utterance 2
@@ -281,7 +295,7 @@ watch_WhenRestartedBeforeFirstEvent_GivesEarlierLinesWithFirstEvent() {
 
 watch_WhenEventAheadOfTranscript_WaitsForItsLine() {
     new_meeting
-    attach_watch "$work/project" "$work/out"
+    attach_watch "$work/project" "$work/out" || return 1
 
     event 1
     sleep 1
@@ -293,13 +307,13 @@ watch_WhenEventAheadOfTranscript_WaitsForItsLine() {
 watch_WhenTwoProjects_ReadIndependently() {
     new_meeting
     utterance 1
-    attach_watch "$work/project-a" "$work/a"
+    attach_watch "$work/project-a" "$work/a" || return 1
     utterance 2
     event 2
     expect_output "$work/a" "$(event_header 2)" "$(line 1)" "$(line 2)" || return 1
     stop_watch
 
-    attach_watch "$work/project-b" "$work/b"
+    attach_watch "$work/project-b" "$work/b" || return 1
     utterance 3
     event 3
 
@@ -1974,7 +1988,7 @@ linuxmode_WhenNoTerminal_RefusesWithCommandToRun() {
 watch_WhenAnswerEndEvent_DoesNotWakeSessionAndGivesLinesWithNextEvent() {
     new_meeting
     utterance 1
-    attach_watch "$work/project" "$work/out"
+    attach_watch "$work/project" "$work/out" || return 1
 
     utterance 2
     printf '1762774262.002\t2\tконец ответа\n' >> "$meeting/events.log"
