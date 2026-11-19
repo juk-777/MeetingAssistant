@@ -89,6 +89,8 @@
   </Folder>
   <Folder Name="/Solution Items/plugins/meeting/.claude-plugin/">
     <File Path="plugins/meeting/.claude-plugin/plugin.json" />
+    <File Path="plugins/meeting/.claude-plugin/plugin.json" />
+    <File Path="plugins/meeting/.claude-plugin/plugin.json" />
   </Folder>
   <Folder Name="/Solution Items/plugins/meeting/skills/meeting/">
     <File Path="plugins/meeting/skills/meeting/SKILL.md" />
