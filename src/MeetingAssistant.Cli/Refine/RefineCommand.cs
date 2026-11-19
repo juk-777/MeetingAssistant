@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.ComponentModel;
 using System.Diagnostics;
 using MeetingAssistant.Cli.Meetings;
 using MeetingAssistant.SharedKernel;
@@ -27,10 +28,17 @@ internal static class RefineCommand
 
     private static async Task<int> Run(DirectoryInfo directory, CancellationToken cancellationToken)
     {
-        // Уточнение идёт фоном: живая запись на той же машине получает процессор раньше.
+        // Уточнение идёт фоном: живая запись на той же машине получает процессор раньше. Linux без прав не даёт
+        // поднять приоритет: отказ значит, что процесс запущен с приоритетом ниже, — уточнению это не мешает.
         using (Process process = Process.GetCurrentProcess())
         {
-            process.PriorityClass = ProcessPriorityClass.BelowNormal;
+            try
+            {
+                process.PriorityClass = ProcessPriorityClass.BelowNormal;
+            }
+            catch (Win32Exception)
+            {
+            }
         }
 
         Result<MeetingHost> opened = MeetingHost.Open(loadsRecognizer: false);
