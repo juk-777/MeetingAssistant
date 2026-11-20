@@ -1896,7 +1896,8 @@ candidate_WhenNewTaskOnScreen_HintsOnceWithoutQuestion() {
     new_meeting
     stub_claude 0 'Ход: хеш-таблица' '\n- O(n)'
     stub_describe 1 'Задача:\nНайти два числа с суммой target'
-    stub_describe 2 'Задача:\nНайти два числа с суммой target\nКод:\ndef two_sum(): pass'
+    # Та же задача другими пустыми строками — не новая задача.
+    stub_describe 2 'Задача:\n\nНайти два числа с суммой target\n\nКод:\ndef two_sum(): pass'
     stub_describe 3 '-'
     start_candidate
 
@@ -1963,6 +1964,21 @@ candidate_WhenScreenBeforeStart_DescribesLatestOfThem() {
 
     expect_exit "$candidate_pid" 0 || return 1
     [ "$(cat "$work/claude.describe.count")" = 1 ] || { echo "описаний: $(cat "$work/claude.describe.count")"; return 1; }
+}
+
+candidate_WhenTaskOnScreenBeforeAnyUtterance_HintsWithoutTranscriptErrors() {
+    new_meeting
+    stub_claude 0 'Ход: хеш-таблица'
+    stub_describe last 'Задача:\nНайти два числа с суммой target'
+    start_candidate
+    rm "$meeting/transcript.md"
+
+    screen_change 00-00-05 'задача'
+    wait_file_text "$meeting/candidate.md" '## [00:00:05] задача на экране' || return 1
+    end_of_recording 0
+
+    expect_exit "$candidate_pid" 0 || return 1
+    ! grep -qF 'transcript.md' "$work/candidate.out" || { cat "$work/candidate.out"; return 1; }
 }
 
 candidate_WhenDescriptionModelFails_ShowsReasonAndWritesNothing() {

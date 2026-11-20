@@ -89,7 +89,8 @@ write_prompt() {
     local text=$1
     {
         echo "Последние реплики встречи:"
-        head -n "$(complete_lines)" "$transcript" | tail -n "$CONTEXT_LINES" | cut -f3-
+        # Подсказка на задачу с экрана бывает раньше первой реплики — транскрипта ещё нет.
+        [ ! -f "$transcript" ] || head -n "$(complete_lines)" "$transcript" | tail -n "$CONTEXT_LINES" | cut -f3-
         screen_prompt
         echo
         if [ "$text" = "$SCREEN_TASK" ]; then
