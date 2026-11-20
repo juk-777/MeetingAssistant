@@ -72,9 +72,9 @@ flowchart LR
 ```
 src/
   MeetingAssistant.SharedKernel/    ← Entity, AggregateRoot, IDomainEvent, DomainException, Result, Error
-  MeetingAssistant.Domain/          ← агрегат Meeting, Utterance, Channel, правила пробуждения; знает только SharedKernel
-  MeetingAssistant.Application/     ← сценарии (StartMeeting, StopMeeting, RecognizeSpeech, ObserveSpeech, RefineMeeting), ICommand/IQuery, порты
-  MeetingAssistant.Infrastructure/  ← по внешним системам: Audio/ (NAudio), Speech/ (sherpa-onnx, Whisper.net), Storage/ (файлы встречи)
+  MeetingAssistant.Domain/          ← агрегат Meeting, Utterance, Channel, правила пробуждения, правило смены экрана; знает только SharedKernel
+  MeetingAssistant.Application/     ← сценарии (StartMeeting, StopMeeting, RecognizeSpeech, ObserveSpeech, RefineMeeting), наблюдение экрана, ICommand/IQuery, порты
+  MeetingAssistant.Infrastructure/  ← по внешним системам: Audio/ (NAudio), Speech/ (sherpa-onnx, Whisper.net), Screen/ (GDI, libX11, PNG), Storage/ (файлы встречи)
   MeetingAssistant.Cli/             ← точка входа: команды, DI, конфиг, Ctrl+C
 tests/
   MeetingAssistant.Domain.UnitTests/
