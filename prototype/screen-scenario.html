@@ -7,7 +7,9 @@
   Сценарий замера правила смены экрана (docs/specs/2026-11-20-screen-capture.md, критерий 4; стенд
   prototype/screen-bench). Страница сама проигрывает фазы по часам от загрузки, ожидаемые смены — в EXPECTED.
   Справа всё время идёт «видео» звонка — шум и движущиеся фигуры, как лица в окне звонка: меняется на каждом кадре.
-  screen-scenario.html?task — только условие задачи и видео, без фаз: для живой проверки окна подсказок.
+  Часы сценария идут с первого щелчка по странице (до него — «щёлкните, чтобы начать»): страницу открывает человек,
+  во весь экран — F11. screen-scenario.html?task — только условие задачи и видео, без фаз: для живой проверки окна
+  подсказок.
 -->
 <style>
   html, body { margin: 0; height: 100%; background: #1e1e1e; color: #d4d4d4; font: 18px/1.5 Consolas, monospace; overflow: hidden; }
@@ -47,8 +49,12 @@ const BLINK_START = TASK_START + 30, END = BLINK_START + 30;
 
 const editor = document.getElementById('editor'), task = document.getElementById('task');
 const phase = document.getElementById('phase'), canvas = document.getElementById('call'), ctx = canvas.getContext('2d');
-const start = performance.now();
+let start = null;
 task.textContent = TASK;
+phase.textContent = 'щёлкните, чтобы начать';
+document.addEventListener('click', () => {
+  if (start === null) { start = performance.now(); requestAnimationFrame(frame); }
+});
 
 function video(t) {
   const image = ctx.createImageData(canvas.width, canvas.height);
@@ -99,7 +105,7 @@ function frame() {
   }
   requestAnimationFrame(frame);
 }
-requestAnimationFrame(frame);
+if (location.search === '?task') { start = performance.now(); requestAnimationFrame(frame); }
 </script>
 </body>
 </html>

@@ -84,6 +84,39 @@ public sealed class ScreenChangePolicyTests
     }
 
     [Fact]
+    public void Observe_WhenCellsChangedOftenRecently_IgnoresThemUntilWindowPasses()
+    {
+        // Видео в окне звонка: ячейки меняются несколько раз и встают — живые, пока изменения не уйдут из окна.
+        ScreenChangePolicy policy = Watching(out TimeSpan at);
+
+        for (int change = 0; change < ScreenChangePolicy.LivelyChanges; change++)
+        {
+            policy.Observe(WithCells(20, Background + 50 + change % 2 * 50), at + change * Second).ShouldBeFalse();
+        }
+
+        ScreenGrid settled = WithCells(20, Background + 50 + (ScreenChangePolicy.LivelyChanges - 1) % 2 * 50);
+        TimeSpan oldestChange = at;
+        policy.Observe(settled, at + 10 * Second).ShouldBeFalse();
+        policy.Observe(settled, oldestChange + ScreenChangePolicy.LivelyWindow - TimeSpan.FromSeconds(0.1)).ShouldBeFalse();
+        policy.Observe(settled, oldestChange + ScreenChangePolicy.LivelyWindow).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Observe_WhenCellsChangedFewerTimesThanLively_ChangesAfterSettle()
+    {
+        ScreenChangePolicy policy = Watching(out TimeSpan at);
+        int lastChange = ScreenChangePolicy.LivelyChanges - 2;
+
+        for (int change = 0; change <= lastChange; change++)
+        {
+            policy.Observe(WithCells(20, Background + 50 + change % 2 * 50), at + change * Second);
+        }
+
+        ScreenGrid settled = WithCells(20, Background + 50 + lastChange % 2 * 50);
+        policy.Observe(settled, at + lastChange * Second + ScreenChangePolicy.Settle).ShouldBeTrue();
+    }
+
+    [Fact]
     public void Observe_WhenChangeBeforeMinInterval_WaitsForIntervalThenChanges()
     {
         ScreenChangePolicy policy = new();

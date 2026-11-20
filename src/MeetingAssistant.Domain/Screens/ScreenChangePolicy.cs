@@ -6,9 +6,10 @@ namespace MeetingAssistant.Domain.Screens;
 /// Сменился ли экран встречи: изменение против последнего записанного экрана, которое перестало меняться.
 /// </summary>
 /// <remarks>
-/// Ячейки, которые меняются на каждом снимке (видео собеседников, анимация), не устаиваются и смену не дают;
-/// допечатанный и остановленный код — даёт. Пороги — константы домена, их задаёт замер на снимках экрана
-/// (docs/measurements.md, «Смена экрана»).
+/// Ячейки, которые меняются на каждом снимке (анимация), не устаиваются и смену не дают. Видео собеседников в окне
+/// звонка движется плавно, и его ячейки успевают постоять неподвижно — поэтому живая ячейка, которая недавно менялась
+/// часто, тоже не считается. Допечатанный и остановленный код — даёт смену. Пороги — константы домена, их задаёт
+/// замер на снимках экрана (docs/measurements.md, «Смена экрана»).
 /// </remarks>
 public sealed class ScreenChangePolicy
 {
@@ -37,7 +38,23 @@ public sealed class ScreenChangePolicy
     /// </summary>
     public static readonly TimeSpan MinInterval = TimeSpan.FromSeconds(10);
 
-    private readonly TimeSpan[] _changedAt = new TimeSpan[ScreenGrid.Columns * ScreenGrid.Rows];
+    /// <summary>
+    /// Ячейка, которая менялась столько раз за <see cref="LivelyWindow"/>, — живая (видео) и не считается.
+    /// </summary>
+    public const int LivelyChanges = 3;
+
+    /// <summary>
+    /// Окно, за которое считаются изменения ячейки для <see cref="LivelyChanges"/>.
+    /// </summary>
+    public static readonly TimeSpan LivelyWindow = TimeSpan.FromSeconds(30);
+
+    private const int Cells = ScreenGrid.Columns * ScreenGrid.Rows;
+
+    private readonly TimeSpan[] _changedAt = new TimeSpan[Cells];
+
+    // Времена последних LivelyChanges изменений ячейки по кругу; следующий слот — самое старое из них.
+    private readonly TimeSpan[] _recentChanges = new TimeSpan[Cells * LivelyChanges];
+    private readonly int[] _changeCount = new int[Cells];
     private ScreenGrid? _recorded;
     private ScreenGrid? _previous;
     private TimeSpan _recordedAt;
@@ -73,9 +90,11 @@ public sealed class ScreenChangePolicy
             if (Differs(grid[cell], _previous[cell]))
             {
                 _changedAt[cell] = at;
+                _recentChanges[cell * LivelyChanges + _changeCount[cell] % LivelyChanges] = at;
+                _changeCount[cell]++;
             }
 
-            if (Differs(grid[cell], _recorded[cell]) && at - _changedAt[cell] >= Settle)
+            if (Differs(grid[cell], _recorded[cell]) && at - _changedAt[cell] >= Settle && !IsLively(cell, at))
             {
                 changed++;
             }
@@ -94,6 +113,10 @@ public sealed class ScreenChangePolicy
     }
 
     private static bool Differs(byte left, byte right) => Math.Abs(left - right) > BrightnessThreshold;
+
+    private bool IsLively(int cell, TimeSpan at) =>
+        _changeCount[cell] >= LivelyChanges
+        && at - _recentChanges[cell * LivelyChanges + _changeCount[cell] % LivelyChanges] < LivelyWindow;
 
     private void Record(ScreenGrid grid, TimeSpan at)
     {
