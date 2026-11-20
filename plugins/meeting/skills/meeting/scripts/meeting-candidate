@@ -130,7 +130,8 @@ while true; do
     fi
     [ -z "$pending_text" ] || start_answer "$pending_stamp" "$pending_text"
 
-    poll_screen
+    # В такте конца записи новое описание не начинается: выход его тут же оборвёт, а снимок уже ушёл бы в модель.
+    [ -n "$ended" ] || poll_screen
     # Описание дописано: новая задача на экране — повод для подсказки. Та же задача на следующем снимке — нет.
     if [ -e "$work/screen-described" ]; then
         rm -f "$work/screen-described"

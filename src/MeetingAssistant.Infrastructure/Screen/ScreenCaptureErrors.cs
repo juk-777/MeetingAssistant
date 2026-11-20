@@ -29,6 +29,9 @@ public static class ScreenCaptureErrors
         MonitorChoiceUnsupportedCode,
         "В Linux снимается весь экран X сразу, номер монитора не поддерживается: запустите с --screen без номера.");
 
+    public static Error MonitorNumberInvalid(int monitor) =>
+        new(NoMonitorCode, $"Номер монитора — с 1 (1 — основной), а не {monitor}.");
+
     public static Error NoMonitor(int monitor, int available) =>
         new(NoMonitorCode, $"Нет монитора {monitor}: мониторов {available}, номера с 1, основной — 1.");
 

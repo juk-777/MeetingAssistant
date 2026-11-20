@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Shouldly;
+using Channel = MeetingAssistant.Domain.Meetings.Channel;
 
 namespace MeetingAssistant.Application.UnitTests.Meetings;
 
@@ -37,6 +38,38 @@ public sealed class ScreenWatchTests : IDisposable
         int captured = screen.Captured;
         _harness.Time.Advance(ScreenChangePolicy.CaptureInterval * 5);
         screen.Captured.ShouldBe(captured);
+    }
+
+    [Fact]
+    public async Task Record_WhenStopped_StopsWatchingBeforeQueueIsRecognized()
+    {
+        _harness.RunningMeeting();
+        var recognizing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var recognized = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _harness.Recognizer.Recognize(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                recognizing.TrySetResult();
+                return recognized.Task;
+            });
+        var screen = new ScriptedScreen(_ => ScriptedScreen.Plain);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(Token);
+        var source = new ScriptedSource([ScriptedSource.Seconds(Channel.Me, 1)], endless: true);
+
+        Task<Result> recording = _harness.Recorder().Record(source, screen, cancellation.Token);
+        await screen.WaitCaptured(1).WaitAsync(Limit, Token);
+        // Отмена дочищает детектор: фраза уходит в распознавание, и оно висит.
+        await cancellation.CancelAsync();
+        await recognizing.Task.WaitAsync(Limit, Token);
+        // Гашению наблюдения — дойти: оно идёт следом за концом подачи в другом потоке.
+        await Task.Delay(TimeSpan.FromMilliseconds(300), Token);
+        int captured = screen.Captured;
+        _harness.Time.Advance(ScreenChangePolicy.CaptureInterval * 5);
+
+        recording.IsCompleted.ShouldBeFalse();
+        screen.Captured.ShouldBe(captured);
+        recognized.SetResult("Реплика");
+        (await recording.WaitAsync(Limit, Token)).IsSuccess.ShouldBeTrue();
     }
 
     [Fact]

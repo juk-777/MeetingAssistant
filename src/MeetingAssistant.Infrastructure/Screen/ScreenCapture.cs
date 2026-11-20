@@ -25,7 +25,7 @@ internal sealed class ScreenCapture : IScreenCapture
     {
         if (monitor < 1)
         {
-            return Result.Failure<IScreenSource>(ScreenCaptureErrors.NoMonitor(monitor.Value, available: 0));
+            return Result.Failure<IScreenSource>(ScreenCaptureErrors.MonitorNumberInvalid(monitor.Value));
         }
 
         if (OperatingSystem.IsWindows())

@@ -102,6 +102,24 @@ public sealed class ScreenChangePolicyTests
     }
 
     [Fact]
+    public void Observe_WhenCellsChangedMoreThanLivelyTimes_CountsWindowFromOldestOfLastChanges()
+    {
+        // Изменения на 0, 1, 2 и 25 с: живая, пока в окне три последних — до 1 + 30 с, а не до 25 + 30.
+        ScreenChangePolicy policy = Watching(out TimeSpan at);
+        int[] changes = [0, 1, 2, 25];
+
+        for (int change = 0; change < changes.Length; change++)
+        {
+            policy.Observe(WithCells(20, Background + 50 + change % 2 * 50), at + changes[change] * Second);
+        }
+
+        ScreenGrid settled = WithCells(20, Background + 50 + (changes.Length - 1) % 2 * 50);
+        TimeSpan secondChange = at + changes[1] * Second;
+        policy.Observe(settled, secondChange + ScreenChangePolicy.LivelyWindow - TimeSpan.FromSeconds(0.1)).ShouldBeFalse();
+        policy.Observe(settled, secondChange + ScreenChangePolicy.LivelyWindow).ShouldBeTrue();
+    }
+
+    [Fact]
     public void Observe_WhenCellsChangedFewerTimesThanLively_ChangesAfterSettle()
     {
         ScreenChangePolicy policy = Watching(out TimeSpan at);

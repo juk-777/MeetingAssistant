@@ -170,7 +170,8 @@ while true; do
     fi
 
     [ -z "$reason" ] || hint "$reason"
-    poll_screen
+    # В такте конца записи новое описание не начинается (как в meeting-candidate).
+    [ -n "$ended" ] || poll_screen
 
     if [ -n "$ended" ]; then
         waited=0

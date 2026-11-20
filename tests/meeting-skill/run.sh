@@ -1926,6 +1926,28 @@ candidate_WhenNewTaskOnScreen_HintsOnceWithoutQuestion() {
     ! grep -qF '(нет задачи и кода)' "$work/claude.prompt" || { cat "$work/claude.prompt"; return 1; }
 }
 
+candidate_WhenScreenWithoutTaskBetweenSameTasks_HintsOnce() {
+    new_meeting
+    stub_claude 0 'Ход: хеш-таблица'
+    stub_describe 1 'Задача:\nНайти два числа с суммой target'
+    stub_describe 2 'Код:\ndef two_sum(): pass'
+    stub_describe 3 'Задача:\nНайти два числа с суммой target'
+    start_candidate
+
+    screen_change 00-00-05 'задача'
+    wait_file_text "$meeting/candidate.md" '## [00:00:05] задача на экране' || return 1
+    screen_change 00-00-20 'редактор'
+    wait_file_text "$meeting/screen.md" '## [00:00:20] экран' || return 1
+    screen_change 00-00-35 'снова задача'
+    wait_file_text "$meeting/screen.md" '## [00:00:35] экран' || return 1
+    sleep 0.5
+    end_of_recording 0
+
+    expect_exit "$candidate_pid" 0 || return 1
+    # С условия ушли в редактор и вернулись — та же задача, подсказка одна.
+    [ "$(grep -c '^## ' "$meeting/candidate.md")" -eq 1 ] || { cat "$meeting/candidate.md"; return 1; }
+}
+
 candidate_WhenScreenChangesDuringDescription_DescribesOnlyLatestAfterIt() {
     new_meeting
     stub_claude 0 'ответ'

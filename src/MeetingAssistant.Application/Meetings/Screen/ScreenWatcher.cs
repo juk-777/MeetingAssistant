@@ -8,7 +8,7 @@ namespace MeetingAssistant.Application.Meetings.Screen;
 /// </summary>
 /// <remarks>
 /// Агрегат встречи и очередь фраз снимков не видят: смену экрана ни с чем в транскрипте не связывают, и снимок
-/// не ждёт распознавания фразы. Время смены — по часам от начала встречи, а не по звуку. Сбой снимка обычно длится
+/// не ждёт распознавания фразы. Время смены — от начала встречи по монотонным часам, а не по звуку. Сбой снимка обычно длится
 /// (экран заблокирован), поэтому в лог идёт первый сбой подряд и возврат снимков, а не каждая секунда.
 /// </remarks>
 internal sealed partial class ScreenWatcher(
@@ -19,7 +19,9 @@ internal sealed partial class ScreenWatcher(
 {
     public async Task Watch(IScreenSource source, CancellationToken cancellationToken)
     {
-        DateTimeOffset startedAt = currentMeeting.Meeting?.StartedAt ?? timeProvider.GetUtcNow();
+        // Время смены — от начала встречи, но идёт по монотонным часам: шаг системных часов назад сломал бы правило.
+        TimeSpan sinceMeetingStart = timeProvider.GetUtcNow() - (currentMeeting.Meeting?.StartedAt ?? timeProvider.GetUtcNow());
+        long watchStarted = timeProvider.GetTimestamp();
         var policy = new ScreenChangePolicy();
         bool failing = false;
         using var timer = new PeriodicTimer(ScreenChangePolicy.CaptureInterval, timeProvider);
@@ -28,7 +30,7 @@ internal sealed partial class ScreenWatcher(
         {
             do
             {
-                await Observe(timeProvider.GetUtcNow() - startedAt);
+                await Observe(sinceMeetingStart + timeProvider.GetElapsedTime(watchStarted));
             }
             while (await timer.WaitForNextTickAsync(cancellationToken));
         }

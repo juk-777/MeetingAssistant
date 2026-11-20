@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- Код вызовов libpulse генерирует LibraryImport, а он пишет unsafe. -->
+    <!-- LibraryImport (libpulse, GDI, libX11) пишет unsafe; снимок GDI читает структуры Windows из буферов через указатели. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
