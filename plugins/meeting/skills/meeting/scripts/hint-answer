@@ -112,7 +112,7 @@ notify() {
     is_hint "$1" || return 0
     # Вход — /dev/null: фоновая задача может унаследовать поток ответа (так бывает при set -m), и powershell.exe
     # съел бы его кусок.
-    bash "$here/meeting-notify" "$1" < /dev/null > /dev/null 2>&1 &
+    bash "$here/meeting-notify" "$dir" "$1" < /dev/null > /dev/null 2>&1 &
 }
 
 journal_entry() {
