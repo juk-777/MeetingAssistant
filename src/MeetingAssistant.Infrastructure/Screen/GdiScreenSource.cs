@@ -97,7 +97,7 @@ internal sealed partial class GdiScreenSource : IScreenSource
         {
             _ = SelectObject(memory, previous);
             _ = DeleteObject(bitmap);
-            _ = DeleteDC(memory);
+            _ = DeleteDc(memory);
             _ = ReleaseDC(0, screen);
         }
     }
@@ -195,9 +195,9 @@ internal sealed partial class GdiScreenSource : IScreenSource
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool DeleteObject(nint gdiObject);
 
-    [LibraryImport("gdi32.dll")]
+    [LibraryImport("gdi32.dll", EntryPoint = "DeleteDC")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool DeleteDC(nint deviceContext);
+    private static partial bool DeleteDc(nint deviceContext);
 
     private readonly record struct Bounds(int Left, int Top, int Right, int Bottom);
 }
