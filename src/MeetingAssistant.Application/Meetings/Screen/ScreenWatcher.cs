@@ -8,7 +8,8 @@ namespace MeetingAssistant.Application.Meetings.Screen;
 /// </summary>
 /// <remarks>
 /// Агрегат встречи и очередь фраз снимков не видят: смену экрана ни с чем в транскрипте не связывают, и снимок
-/// не ждёт распознавания фразы. Время смены — по часам от начала встречи, а не по звуку.
+/// не ждёт распознавания фразы. Время смены — по часам от начала встречи, а не по звуку. Сбой снимка обычно длится
+/// (экран заблокирован), поэтому в лог идёт первый сбой подряд и возврат снимков, а не каждая секунда.
 /// </remarks>
 internal sealed partial class ScreenWatcher(
     ICurrentMeeting currentMeeting,
@@ -20,13 +21,14 @@ internal sealed partial class ScreenWatcher(
     {
         DateTimeOffset startedAt = currentMeeting.Meeting?.StartedAt ?? timeProvider.GetUtcNow();
         var policy = new ScreenChangePolicy();
+        bool failing = false;
         using var timer = new PeriodicTimer(ScreenChangePolicy.CaptureInterval, timeProvider);
 
         try
         {
             do
             {
-                await Observe(source, policy, timeProvider.GetUtcNow() - startedAt, cancellationToken);
+                await Observe(timeProvider.GetUtcNow() - startedAt);
             }
             while (await timer.WaitForNextTickAsync(cancellationToken));
         }
@@ -34,26 +36,39 @@ internal sealed partial class ScreenWatcher(
         {
             // Конец записи — конец наблюдения.
         }
-    }
 
-    private async Task Observe(IScreenSource source, ScreenChangePolicy policy, TimeSpan at, CancellationToken cancellationToken)
-    {
-        try
+        async Task Observe(TimeSpan at)
         {
-            ScreenFrame frame = source.Capture();
-
-            if (policy.Observe(ScreenGrid.FromRgb(frame.Width, frame.Height, frame.Rgb.Span), at))
+            try
             {
-                await writer.Write(frame, at, cancellationToken);
+                ScreenFrame frame = source.Capture();
+
+                if (failing)
+                {
+                    failing = false;
+                    LogScreenRestored(at);
+                }
+
+                if (policy.Observe(ScreenGrid.FromRgb(frame.Width, frame.Height, frame.Rgb.Span), at))
+                {
+                    await writer.Write(frame, at, cancellationToken);
+                }
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                // Экран — дополнение к звуку: сбой снимка не повод останавливать запись встречи.
+                if (!failing)
+                {
+                    failing = true;
+                    LogScreenFailed(exception, at);
+                }
             }
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            // Экран — дополнение к звуку: сбой снимка не повод останавливать запись встречи.
-            LogScreenFailed(exception, at);
-        }
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Снимок экрана на {At} не записан")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Снимок экрана снова идёт с {At}")]
+    private partial void LogScreenRestored(TimeSpan at);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Снимок экрана на {At} не записан; следующие сбои подряд в лог не идут")]
     private partial void LogScreenFailed(Exception exception, TimeSpan at);
 }

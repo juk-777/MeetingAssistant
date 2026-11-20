@@ -59,7 +59,9 @@ internal sealed partial class GdiScreenSource : IScreenSource
         {
             if (bitmap == 0 || !BitBlt(memory, 0, 0, width, height, screen, _bounds.Left, _bounds.Top, SourceCopy))
             {
-                throw new Win32Exception(Marshal.GetLastPInvokeError(), "Снимок монитора не скопирован.");
+                throw new Win32Exception(
+                    Marshal.GetLastPInvokeError(),
+                    $"Снимок монитора {width}×{height} не скопирован: экран заблокирован или недоступен.");
             }
 
             // BITMAPINFO: заголовок (размер, ширина, высота, плоскости и бит на точку) и место под одну запись

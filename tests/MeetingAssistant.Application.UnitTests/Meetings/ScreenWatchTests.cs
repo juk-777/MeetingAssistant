@@ -58,6 +58,24 @@ public sealed class ScreenWatchTests : IDisposable
     }
 
     [Fact]
+    public async Task Record_WhenCaptureFailsSeveralTimesInRow_LogsFirstFailureAndRecovery()
+    {
+        _harness.RunningMeeting();
+        var screen = new ScriptedScreen(second => second is >= 1 and <= 3
+            ? throw new InvalidOperationException("Экран заблокирован")
+            : ScriptedScreen.Plain);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(Token);
+
+        Task<Result> recording = Record(screen, cancellation.Token);
+        await StepTo(screen, 5 * ScreenChangePolicy.CaptureInterval);
+        await cancellation.CancelAsync();
+
+        (await recording.WaitAsync(Limit, Token)).IsSuccess.ShouldBeTrue();
+        _harness.Log.Entries.Count(entry => entry.Level == LogLevel.Warning).ShouldBe(1);
+        _harness.Log.Entries.Count(entry => entry.Message.Contains("снова идёт")).ShouldBe(1);
+    }
+
+    [Fact]
     public async Task Record_WhenWriterFails_LogsAndKeepsWatching()
     {
         _harness.RunningMeeting();
