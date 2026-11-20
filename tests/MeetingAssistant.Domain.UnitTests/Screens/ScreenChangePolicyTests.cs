@@ -140,7 +140,8 @@ public sealed class ScreenChangePolicyTests
         int height = ScreenGrid.Rows * scale;
         byte[] rgb = new byte[width * height * 3];
 
-        // Первая ячейка: две белые точки и две чёрные — средняя яркость 127.5, округляется до 128; чистый красный — 76.
+        // Первая ячейка: две белые точки и две чёрные — средняя яркость 127.5, округляется до 128; чистый красный — 76,
+        // чистый зелёный — 150, четвёртая ячейка чёрная.
         Paint(rgb, width, 0, 0, 255, 255, 255);
         Paint(rgb, width, 1, 1, 255, 255, 255);
         Paint(rgb, width, scale, 0, 255, 0, 0);
@@ -148,11 +149,17 @@ public sealed class ScreenChangePolicyTests
         Paint(rgb, width, scale, 1, 255, 0, 0);
         Paint(rgb, width, scale + 1, 1, 255, 0, 0);
 
+        for (int point = 0; point < scale * scale; point++)
+        {
+            Paint(rgb, width, 2 * scale + point % scale, point / scale, 0, 255, 0);
+        }
+
         ScreenGrid grid = ScreenGrid.FromRgb(width, height, rgb);
 
         grid[0].ShouldBe((byte)128);
         grid[1].ShouldBe((byte)76);
-        grid[2].ShouldBe((byte)0);
+        grid[2].ShouldBe((byte)150);
+        grid[3].ShouldBe((byte)0);
     }
 
     [Fact]
