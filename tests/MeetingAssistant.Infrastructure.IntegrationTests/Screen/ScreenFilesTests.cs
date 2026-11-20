@@ -64,6 +64,7 @@ public sealed class ScreenFilesTests : IDisposable
     [Theory]
     [InlineData(3840, 2160, ScreenImage.MaxSide, 882)]
     [InlineData(1000, 3000, 523, ScreenImage.MaxSide)]
+    [InlineData(3000, 1000, ScreenImage.MaxSide, 523)]
     [InlineData(ScreenImage.MaxSide, 900, ScreenImage.MaxSide, 900)]
     [InlineData(800, 600, 800, 600)]
     public void Downscale_KeepsProportionsWithinMaxSide(int width, int height, int expectedWidth, int expectedHeight)
@@ -76,7 +77,8 @@ public sealed class ScreenFilesTests : IDisposable
     [Fact]
     public void Downscale_WhenHalving_AveragesCoveredPoints()
     {
-        // Шахматка чёрных и белых точек вдвое меньше — серый; красная полоса слева — красный.
+        // Белая каждая вторая точка в каждой второй строке: точка вдвое меньшего снимка накрывает 2×2 — одна белая из
+        // четырёх; красная полоса слева — красный.
         const int width = ScreenImage.MaxSide * 2;
         const int height = 4;
         byte[] rgb = new byte[width * height * 3];
@@ -91,7 +93,7 @@ public sealed class ScreenFilesTests : IDisposable
                 {
                     point[0] = 255;
                 }
-                else if ((x + y) % 2 == 0)
+                else if (x % 2 == 0 && y % 2 == 0)
                 {
                     point.Fill(255);
                 }
@@ -101,7 +103,7 @@ public sealed class ScreenFilesTests : IDisposable
         ScreenFrame scaled = ScreenImage.Downscale(new ScreenFrame(width, height, rgb));
 
         scaled.Rgb.Span[..3].ToArray().ShouldBe(new byte[] { 255, 0, 0 });
-        scaled.Rgb.Span.Slice(3, 3).ToArray().ShouldBe(new byte[] { 128, 128, 128 });
+        scaled.Rgb.Span.Slice(3, 3).ToArray().ShouldBe(new byte[] { 64, 64, 64 });
     }
 
     public void Dispose() => _harness.Dispose();
