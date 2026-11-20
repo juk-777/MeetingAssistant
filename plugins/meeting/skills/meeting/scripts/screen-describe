@@ -1,0 +1,130 @@
+# Экран встречи для окон подсказок (meeting-candidate, meeting-interviewer): смены экрана из screen.log (пишет
+# приложение с ключом --screen) переводятся в текст отдельным вызовом модели с картинкой, описание дописывается в
+# screen.md, последнее описание добавляется к каждой подсказке (docs/specs/2026-11-20-screen-capture.md).
+#
+# Описание идёт фоном и подсказку не ждёт и не обрывает. Смена, пришедшая во время описания, его не обрывает: на
+# непрерывном наборе кода обрыв не дал бы дописать ни одного описания. После текущего описывается последняя смена,
+# промежуточные пропускаются. Экран, снятый до запуска окна, тоже описывается — последний из них.
+#
+# Подключается через source после hint-answer; до этого скрипт роли задаёт here, dir, claude и work.
+#
+# shellcheck shell=bash
+# shellcheck disable=SC2154 # переменные задаёт скрипт роли
+
+SCREEN_DEFAULT_MODEL=haiku
+NO_SCREEN_TEXT="(нет задачи и кода)"
+screen_log="$dir/screen.log"
+screen_journal="$dir/screen.md"
+screen_model=$(bash "$here/current-field" "$dir/mode.json" screenModel 2> /dev/null) || screen_model=$SCREEN_DEFAULT_MODEL
+[ -n "$screen_model" ] || screen_model=$SCREEN_DEFAULT_MODEL
+screens_read=0
+screen_pid=""
+
+write_screen_rules() {
+    {
+        echo "Ты переводишь снимок экрана созвона в текст для подсказчика на собеседовании. Отвечай только по-русски, без вступления."
+        echo "Условие задачи — дословно, разделом «Задача:». Код — дословно, с отступами, разделом «Код:». Схему — перечнем блоков и связей, разделом «Схема:». Раздела, которого на экране нет, в ответе нет."
+        echo "Окно звонка, лица, рабочий стол, панели программ не описывай."
+        echo "Если на экране нет ни задачи, ни кода, ни схемы — весь ответ один символ «-». Не объясняй, почему."
+    } > "$work/screen-rules"
+}
+
+# Последняя строка screen.log может ещё дописываться: в счёт идут только строки с переводом строки.
+screen_lines() {
+    if [ -f "$screen_log" ]; then wc -l < "$screen_log"; else echo 0; fi
+}
+
+screen_running() {
+    [ -e "$work/screen-running" ]
+}
+
+# Описание одного снимка: вызов модели с картинкой (stream-json на входе), блок в screen.md — только целиком.
+describe_screen() {
+    local file=$1 stamp body
+    stamp=${file%.png}
+    stamp="[${stamp//-/:}]"
+    {
+        printf '{"type":"user","message":{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"'
+        base64 -w0 "$dir/screen/$file"
+        printf '"}},{"type":"text","text":"Снимок экрана встречи."}]}}\n'
+    } > "$work/screen-input"
+    "$claude" -p --model "$screen_model" --effort low --tools "" --strict-mcp-config --setting-sources "" \
+        --disable-slash-commands --no-session-persistence --system-prompt-file "$work/screen-rules" \
+        --input-format stream-json --output-format stream-json --verbose --include-partial-messages \
+        < "$work/screen-input" 2> "$work/screen-error" | decode_stream > "$work/screen-text"
+    if [ ! -s "$work/screen-text" ]; then
+        printf '\n(экран %s: модель не ответила: %s)\n' "$stamp" "$(tr '\n' ' ' < "$work/screen-error" | cut -c1-200)"
+    else
+        body=$(< "$work/screen-text")
+        [ "$body" != "-" ] || body=$NO_SCREEN_TEXT
+        printf '## %s экран\n\n%s\n\n' "$stamp" "$body" >> "$screen_journal"
+        printf '\n▷ экран %s: описание обновлено\n' "$stamp"
+        : > "$work/screen-described"
+    fi
+    rm -f "$work/screen-running"
+}
+
+# Новая смена экрана — описание, если оно не идёт; иначе смена ждёт, и после текущего описывается последняя.
+poll_screen() {
+    local count line
+    if [ -n "$screen_pid" ] && ! screen_running; then
+        wait "$screen_pid" 2> /dev/null
+        screen_pid=""
+    fi
+    screen_running && return 0
+    count=$(screen_lines)
+    [ "$count" -gt "$screens_read" ] || return 0
+    line=$(head -n "$count" "$screen_log" | tail -n 1)
+    screens_read=$count
+    : > "$work/screen-running"
+    # Своей группой процессов, как ответ: выход окна гасит и вызов модели.
+    set -m
+    describe_screen "${line#*$'\t'}" &
+    screen_pid=$!
+    set +m
+}
+
+cancel_screen() {
+    [ -n "$screen_pid" ] || return 0
+    kill -- "-$screen_pid" 2> /dev/null
+    wait "$screen_pid" 2> /dev/null
+    rm -f "$work/screen-running"
+    screen_pid=""
+}
+
+# Последнее описание с задачей, кодом или схемой: строка «[чч:мм:сс]», затем текст. Нет — пусто.
+last_screen() {
+    [ -f "$screen_journal" ] || return 0
+    awk -v none="$NO_SCREEN_TEXT" '
+        /^## \[[0-9:]+\] экран$/ { finish(); stamp = $2; body = ""; next }
+        { body = body $0 "\n" }
+        function finish(    text) {
+            text = body
+            sub(/\n+$/, "", text)
+            sub(/^\n+/, "", text)
+            if (stamp != "" && text != none) { best_stamp = stamp; best = text }
+        }
+        END { finish(); if (best_stamp != "") printf "%s\n%s\n", best_stamp, best }
+    ' "$screen_journal"
+}
+
+# Описание экрана для запроса подсказки; нет описания — ничего.
+screen_prompt() {
+    local screen
+    screen=$(last_screen)
+    [ -n "$screen" ] || return 0
+    echo
+    echo "Экран встречи (описание снимка на ${screen%%$'\n'*}):"
+    printf '%s\n' "${screen#*$'\n'}"
+}
+
+# Раздел «Задача:» описания — от строки «Задача:» до «Код:» или «Схема:».
+screen_task() {
+    printf '%s\n' "$1" | awk '
+        /^(Код|Схема):/ { inside = 0 }
+        /^Задача:/ { inside = 1 }
+        inside { print }
+    '
+}
+
+write_screen_rules
