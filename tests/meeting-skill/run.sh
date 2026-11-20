@@ -559,6 +559,28 @@ start_WhenScreenGiven_PassesItToWindow() {
     done
 }
 
+start_WhenNotifyGiven_MarksNewMeetingOnly() {
+    local args got
+    for args in '' '--notify' '--notify словарь.txt --screen' '--screen --notify'; do
+        new_meeting
+        stub_start
+        current_json "$work/start.next" "new${#args}" "$meeting"
+        touch "$work/словарь.txt"
+        # shellcheck disable=SC2086 # ключи — словами
+        got=$(cd "$work" && PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=5 \
+            timeout 15 bash "$bin/meeting-start" 'x' $args) || { echo "аргументы: $args"; return 1; }
+        [ "$got" = "$meeting" ] || { echo "аргументы: $args, получено: $got"; return 1; }
+        [ "$(head -1 "$work/start.args")" = x ] || { echo "аргументы: $args"; cat "$work/start.args"; return 1; }
+        if [[ $args == *--notify* ]]; then
+            [ -f "$meeting/notify" ] || { echo "аргументы: $args — нет отметки"; return 1; }
+        else
+            [ ! -e "$meeting/notify" ] || { echo "отметка без --notify"; return 1; }
+        fi
+    done
+    # Прошлая встреча, которую новая сменила, отметки не получает.
+    [ ! -e "$work/notify" ] || { echo "отметка у прошлой встречи"; return 1; }
+}
+
 start_WhenAppNotInstalled_ExitsAsNotInstalledWithoutWaiting() {
     stub_start
     printf 'exit 3\n' >> "$work/stub-start/powershell.exe"
@@ -973,13 +995,21 @@ stub_powershell() {
     printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$MEETING_NOTIFY_TEXT" > "%s/notify.text"\nprintf "%%s\\n" "$WSLENV" > "%s/notify.wslenv"\n' \
         "$work" "$work" > "$work/stub-ps/powershell.exe"
     chmod +x "$work/stub-ps/powershell.exe"
+    rm -f "$work/notify.text" "$work/notify.wslenv"
+}
+
+# notify_meeting: каталог встречи с включёнными уведомлениями (отметка notify).
+notify_meeting() {
+    new_meeting
+    touch "$meeting/notify"
 }
 
 notify_WhenPowershellPresent_PassesTextThroughWslenv() {
+    notify_meeting
     stub_powershell
     local text='Ответ: '\''да'\'' "нет" $HOME `x`'
 
-    PATH="$work/stub-ps:$PATH" WSLENV="USERPROFILE/p" bash "$bin/meeting-notify" "$text"$'\r' || return 1
+    PATH="$work/stub-ps:$PATH" WSLENV="USERPROFILE/p" bash "$bin/meeting-notify" "$meeting" "$text"$'\r' || return 1
 
     [ "$(cat "$work/notify.text")" = "$text" ] || { echo "текст: $(cat "$work/notify.text")"; return 1; }
     [ "$(cat "$work/notify.wslenv")" = "USERPROFILE/p:MEETING_NOTIFY_TEXT" ] ||
@@ -987,17 +1017,19 @@ notify_WhenPowershellPresent_PassesTextThroughWslenv() {
 }
 
 notify_WhenMultiline_JoinsLinesWithSpace() {
+    notify_meeting
     stub_powershell
 
-    PATH="$work/stub-ps:$PATH" bash "$bin/meeting-notify" $'первая\r\nвторая' || return 1
+    PATH="$work/stub-ps:$PATH" bash "$bin/meeting-notify" "$meeting" $'первая\r\nвторая' || return 1
 
     [ "$(cat "$work/notify.text")" = "первая вторая" ] || { echo "текст: $(cat "$work/notify.text")"; return 1; }
 }
 
 notify_WhenNoWslenvBefore_SetsOnlyItsName() {
+    notify_meeting
     stub_powershell
 
-    PATH="$work/stub-ps:$PATH" WSLENV= bash "$bin/meeting-notify" "текст" || return 1
+    PATH="$work/stub-ps:$PATH" WSLENV= bash "$bin/meeting-notify" "$meeting" "текст" || return 1
 
     [ "$(cat "$work/notify.wslenv")" = "MEETING_NOTIFY_TEXT" ] || { echo "WSLENV: $(cat "$work/notify.wslenv")"; return 1; }
 }
@@ -1013,9 +1045,10 @@ stub_native() {
 }
 
 notify_WhenTextStartsWithSlashInGitBash_ReachesWindowsUnchanged() {
+    notify_meeting
     stub_native "$work/stub-native" MEETING_NOTIFY_TEXT
 
-    PATH="$work/stub-native:$PATH" bash "$bin/meeting-notify" '/api/orders 500' || return 1
+    PATH="$work/stub-native:$PATH" bash "$bin/meeting-notify" "$meeting" '/api/orders 500' || return 1
 
     [ "$(cat "$work/native.out")" = '/api/orders 500' ] || { cat "$work/native.out"; return 1; }
 }
@@ -1031,12 +1064,39 @@ start_WhenNameStartsWithSlashInGitBash_ReachesWindowsUnchanged() {
 }
 
 notify_WhenNoPowershell_ExitsQuietly() {
+    notify_meeting
     mkdir -p "$work/no-ps"
     local output
 
-    output=$(PATH="$work/no-ps" /bin/bash "$bin/meeting-notify" "текст" 2>&1) || { echo "отказ: $output"; return 1; }
+    output=$(PATH="$work/no-ps" /bin/bash "$bin/meeting-notify" "$meeting" "текст" 2>&1) || { echo "отказ: $output"; return 1; }
 
     [ -z "$output" ] || { echo "вывод: $output"; return 1; }
+}
+
+notify_WhenMeetingHasNoMark_ShowsNothing() {
+    new_meeting
+    stub_powershell
+    local output
+
+    output=$(PATH="$work/stub-ps:$PATH" bash "$bin/meeting-notify" "$meeting" "текст" 2>&1) ||
+        { echo "отказ: $output"; return 1; }
+
+    [ -z "$output" ] || { echo "вывод: $output"; return 1; }
+    [ ! -e "$work/notify.text" ] || { echo "уведомление: $(cat "$work/notify.text")"; return 1; }
+}
+
+notify_WhenNoMeetingDirectory_RefusesWithUsage() {
+    stub_powershell
+    local code=0
+
+    PATH="$work/stub-ps:$PATH" bash "$bin/meeting-notify" "текст" > /dev/null 2> "$work/notify.err" || code=$?
+    [ "$code" -eq 2 ] || { echo "код без каталога: $code"; return 1; }
+    code=0
+    PATH="$work/stub-ps:$PATH" bash "$bin/meeting-notify" "$work/нет-встречи" "текст" > /dev/null 2>> "$work/notify.err" ||
+        code=$?
+    [ "$code" -eq 2 ] || { echo "код с несуществующим каталогом: $code"; return 1; }
+    [ ! -e "$work/notify.text" ] || { echo "уведомление: $(cat "$work/notify.text")"; return 1; }
+    grep -qF 'meeting-notify <каталог встречи> <текст>' "$work/notify.err" || { cat "$work/notify.err"; return 1; }
 }
 
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -1407,6 +1467,27 @@ linuxstart_WhenScreenGiven_PassesItToApp() {
     [ "$(cat "$work/linux-meeting.args")" = "$(printf '%s\n' start x --screen)" ] || { cat "$work/linux-meeting.args"; return 1; }
 }
 
+linuxstart_WhenNotifyGiven_MarksNewMeetingWithoutPassingIt() {
+    linux_installed || return 1
+    stub_terminal "$work/stub-term" x-terminal-emulator -e
+    local args got
+    for args in '' '--notify --screen'; do
+        new_meeting
+        current_json "$work/start.next" "new${#args}" "$meeting"
+        # shellcheck disable=SC2086 # ключи — словами
+        got=$(MEETING_START_TIMEOUT=5 linux_skill "$work/stub-term" meeting-start 'x' $args) ||
+            { echo "аргументы: $args"; return 1; }
+        [ "$got" = "$meeting" ] || { echo "аргументы: $args, получено: $got"; return 1; }
+        if [ -n "$args" ]; then
+            [ -f "$meeting/notify" ] || { echo "нет отметки"; return 1; }
+            [ "$(cat "$work/linux-meeting.args")" = "$(printf '%s\n' start x --screen)" ] ||
+                { cat "$work/linux-meeting.args"; return 1; }
+        else
+            [ ! -e "$meeting/notify" ] || { echo "отметка без --notify"; return 1; }
+        fi
+    done
+}
+
 linuxstart_WhenOnlyOneTerminal_OpensItWithItsKey() {
     linux_installed || return 1
     local pair terminal number=0
@@ -1602,15 +1683,28 @@ linuxnotify_WhenNotifySendPresent_PassesTitleAndJoinedText() {
     mkdir -p "$work/stub-notify"
     printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s/notify.args"\n' "$work" > "$work/stub-notify/notify-send"
     chmod +x "$work/stub-notify/notify-send"
-    linux_skill "$work/stub-notify" meeting-notify $'-первая\nTask<T> & b' || return 1
+    notify_meeting
+    linux_skill "$work/stub-notify" meeting-notify "$meeting" $'-первая\nTask<T> & b' || return 1
     [ "$(cat "$work/notify.args")" = "$(printf '%s\n' --app-name=MeetingAssistant --expire-time=25000 -- MeetingAssistant \
         '-первая Task&lt;T&gt; &amp; b')" ] || { cat "$work/notify.args"; return 1; }
+}
+
+linuxnotify_WhenMeetingHasNoMark_ShowsNothing() {
+    home=$(mktemp -d "$work/home.XXXX")
+    mkdir -p "$work/stub-notify"
+    printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s/notify.args"\n' "$work" > "$work/stub-notify/notify-send"
+    chmod +x "$work/stub-notify/notify-send"
+    rm -f "$work/notify.args"
+    new_meeting
+    linux_skill "$work/stub-notify" meeting-notify "$meeting" 'текст' || return 1
+    [ ! -e "$work/notify.args" ] || { echo "уведомление: $(cat "$work/notify.args")"; return 1; }
 }
 
 linuxnotify_WhenNoNotifySend_ExitsQuietly() {
     home=$(mktemp -d "$work/home.XXXX")
     local output
-    output=$(linux_skill "$work/stub-none" meeting-notify 'текст' 2>&1) || { echo "отказ: $output"; return 1; }
+    notify_meeting
+    output=$(linux_skill "$work/stub-none" meeting-notify "$meeting" 'текст' 2>&1) || { echo "отказ: $output"; return 1; }
     [ -z "$output" ] || { echo "вывод: $output"; return 1; }
 }
 
@@ -1715,9 +1809,10 @@ EOF
     rm -f "$work/notify.all"
 }
 
-# start_candidate: meeting-candidate на встрече $meeting с двойником claude; ждёт строку приветствия — строки,
-# дописанные до неё, скрипт считает прошлыми.
+# start_candidate: meeting-candidate на встрече $meeting с двойником claude, уведомления встречи включены; ждёт
+# строку приветствия — строки, дописанные до неё, скрипт считает прошлыми.
 start_candidate() {
+    touch "$meeting/notify"
     : >> "$meeting/transcript.md"
     : >> "$meeting/events.log"
     MEETING_CLAUDE="$work/claude" PATH="$work/stub-ps-many:$PATH" \
@@ -2044,6 +2139,21 @@ candidate_WhenUtteranceHasExactlyMinimumWords_CallsModel() {
     [ -e "$work/claude.args" ] || { echo "модель не вызвана на 3 слова"; return 1; }
 }
 
+candidate_WhenMeetingNotifyOff_AnswersWithoutNotification() {
+    new_meeting
+    stub_claude 0 'Да, через outbox'
+    start_candidate
+    rm "$meeting/notify"
+
+    say 1 Собеседники 'Вы использовали outbox раньше?'
+    end_of_recording 1
+
+    expect_exit "$candidate_pid" 0 || return 1
+    grep -qF 'Да, через outbox' "$meeting/candidate.md" || { cat "$meeting/candidate.md"; return 1; }
+    sleep 0.3
+    [ ! -e "$work/notify.all" ] || { echo "уведомление: $(cat "$work/notify.all")"; return 1; }
+}
+
 candidate_WhenAnswerIsOneLine_NotifiesIt() {
     new_meeting
     stub_claude 0 'Да, через outbox'
@@ -2243,8 +2353,10 @@ mark_WhenCalled_AppendsEpochLine() {
     return 0
 }
 
-# start_interviewer: meeting-interviewer на встрече $meeting с двойником claude; ждёт строку приветствия.
+# start_interviewer: meeting-interviewer на встрече $meeting с двойником claude, уведомления встречи включены; ждёт
+# строку приветствия.
 start_interviewer() {
+    touch "$meeting/notify"
     : >> "$meeting/transcript.md"
     : >> "$meeting/events.log"
     MEETING_CLAUDE="$work/claude" PATH="$work/stub-ps-many:$PATH" \

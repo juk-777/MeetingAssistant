@@ -19,7 +19,10 @@
 # --screen [<монитор>] — снимать экран встречи (meeting start --screen): номер монитора — только в Windows, отказ на
 # Linux даёт приложение в окне записи.
 #
-# meeting-start <имя> [файл словаря] [--screen [<монитор>]]
+# --notify — всплывающие уведомления подсказок на этой встрече: отметка notify в каталоге новой встречи, её проверяет
+# meeting-notify. Без ключа уведомлений нет.
+#
+# meeting-start <имя> [файл словаря] [--screen [<монитор>]] [--notify]
 set -euo pipefail
 
 fail() {
@@ -27,23 +30,27 @@ fail() {
     exit 1
 }
 
-# Новая встреча — current.json с другим id; найдена — её каталог, и скрипт кончается.
+# Новая встреча — current.json с другим id; найдена — отметка уведомлений, её каталог, и скрипт кончается.
 wait_new_meeting() {
     local deadline=$((SECONDS + ${MEETING_START_TIMEOUT:-60})) id
     while [ $SECONDS -lt $deadline ]; do
         id=$(bash "$here/current-field" "$root/current.json" id 2>/dev/null || true)
         if [ -n "$id" ] && [ "$id" != "$previous" ]; then
-            exec bash "$here/meeting-dir"
+            dir=$(bash "$here/meeting-dir")
+            [ -z "$notify" ] || : > "$dir/notify"
+            printf '%s\n' "$dir"
+            exit 0
         fi
         sleep 0.5
     done
     fail "Новая встреча не началась за ${MEETING_START_TIMEOUT:-60} с: причина — в окне meeting (настройки, модель, устройства)."
 }
 
-usage="meeting-start <имя> [файл словаря] [--screen [<монитор>]]"
+usage="meeting-start <имя> [файл словаря] [--screen [<монитор>]] [--notify]"
 positional=()
 screen=""
 monitor=""
+notify=""
 while [ $# -gt 0 ]; do
     case $1 in
         --screen)
@@ -51,6 +58,7 @@ while [ $# -gt 0 ]; do
             shift
             if [ $# -gt 0 ] && [[ $1 =~ ^[0-9]+$ ]]; then monitor=$1; shift; fi
             ;;
+        --notify) notify=1; shift ;;
         *) positional+=("$1"); shift ;;
     esac
 done
