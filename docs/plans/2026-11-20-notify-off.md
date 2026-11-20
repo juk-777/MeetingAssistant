@@ -6,8 +6,8 @@
 
 | # | Этап | Готово |
 |---|---|---|
-| 1 | `meeting-notify` с каталогом встречи и отметкой `notify`; `meeting-start --notify`; окно подсказок передаёт каталог; тесты | ⬜ |
-| 2 | `SKILL.md`, README, `docs/architecture.md`, `docs/decisions.md`; плагин 0.4.1 | ⬜ |
+| 1 | `meeting-notify` с каталогом встречи и отметкой `notify`; `meeting-start --notify`; окно подсказок передаёт каталог; тесты | ✅ |
+| 2 | `SKILL.md`, README, `docs/architecture.md`, `docs/decisions.md`; плагин 0.4.1 | ✅ |
 | 3 | Закрытие: мутации, живая проверка на Windows, саморевью, ретро, pull request | ⬜ |
 
 ## 1. Отметка и проверка
@@ -24,6 +24,11 @@
 (падают тесты «без отметки»), снятая установка отметки в `meeting-start` (падают `start_`/`linuxstart_` с
 `--notify`), окно не передаёт каталог (падает тест окна с отметкой).
 
+*Подтверждено:* тесты скилла WSL — 149, Git Bash — 113, 0 упало. Мутации убиты: снятая проверка отметки (падают
+`notify_`/`linuxnotify_WhenMeetingHasNoMark_*`, `candidate_WhenMeetingNotifyOff_*`), отметка не ставится и
+ставится всегда (падают `start_WhenNotifyGiven_*`, `linuxstart_WhenNotifyGiven_*`), окно передаёт свой рабочий
+каталог вместо каталога встречи (падают 2 теста уведомлений кандидата и 1 интервьюера).
+
 ## 2. Правила и доки
 
 `SKILL.md`: шаг подсказки — `meeting-notify 'D' '<суть>'`; `--notify` в аргументе `start` идёт в `meeting-start`;
@@ -32,6 +37,9 @@
 умолчанию, причина. `plugin.json` — 0.4.1.
 
 **Готово, когда:** `grep -rn "meeting-notify" plugins docs README.md` — все вызовы с каталогом встречи.
+
+*Подтверждено:* вызов в `SKILL.md` — `meeting-notify 'D' '<суть>'`; в `docs/architecture.md` — раздел «Отметка
+`notify`»; в README — ключ, умолчание и файл `notify` в каталоге встречи.
 
 ## 3. Закрытие
 
