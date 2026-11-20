@@ -2,6 +2,7 @@ using MeetingAssistant.Application.Abstractions.Messaging;
 using MeetingAssistant.Application.Meetings;
 using MeetingAssistant.Application.Meetings.Recording;
 using MeetingAssistant.Application.Meetings.Refine;
+using MeetingAssistant.Application.Meetings.Screen;
 using MeetingAssistant.Domain.Meetings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -34,6 +35,7 @@ internal sealed class ScenarioHarness : IDisposable
         services.AddSingleton(RecordedMeetings);
         services.AddSingleton(RefineRecognizer);
         services.AddSingleton<IRefinedTranscripts>(RefinedTranscripts);
+        services.AddSingleton(ScreenWriter);
         services.AddApplication();
         _provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true });
     }
@@ -59,6 +61,8 @@ internal sealed class ScenarioHarness : IDisposable
     public IRefineRecognizer RefineRecognizer { get; } = Substitute.For<IRefineRecognizer>();
 
     public DraftTranscripts RefinedTranscripts { get; } = new();
+
+    public IScreenWriter ScreenWriter { get; } = Substitute.For<IScreenWriter>();
 
     public IMeetingRecorder Recorder() => _provider.GetRequiredService<IMeetingRecorder>();
 

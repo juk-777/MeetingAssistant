@@ -61,7 +61,7 @@ public sealed class ReplayPipelineTests : IDisposable
         started.IsSuccess.ShouldBeTrue();
 
         Result recorded = await _provider.GetRequiredService<IMeetingRecorder>()
-            .Record(WavFileAudioSource.Open(wav, NoPacing, TimeProvider.System).Value, Token);
+            .Record(WavFileAudioSource.Open(wav, NoPacing, TimeProvider.System).Value, screen: null, Token);
 
         recorded.IsSuccess.ShouldBeTrue();
         string folder = _provider.GetRequiredService<MeetingDirectory>().Path;

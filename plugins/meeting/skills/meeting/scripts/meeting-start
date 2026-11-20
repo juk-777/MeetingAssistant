@@ -16,7 +16,10 @@
 # Корень встреч окну передаётся тот же, по которому скрипт ждёт новую встречу (meeting-dir --root), — иначе запись
 # легла бы в один корень, а ожидание шло бы в другом.
 #
-# meeting-start <имя> [файл словаря]
+# --screen [<монитор>] — снимать экран встречи (meeting start --screen): номер монитора — только в Windows, отказ на
+# Linux даёт приложение в окне записи.
+#
+# meeting-start <имя> [файл словаря] [--screen [<монитор>]]
 set -euo pipefail
 
 fail() {
@@ -37,7 +40,22 @@ wait_new_meeting() {
     fail "Новая встреча не началась за ${MEETING_START_TIMEOUT:-60} с: причина — в окне meeting (настройки, модель, устройства)."
 }
 
-[ $# -ge 1 ] && [ $# -le 2 ] || { echo "meeting-start <имя> [файл словаря]" >&2; exit 2; }
+usage="meeting-start <имя> [файл словаря] [--screen [<монитор>]]"
+positional=()
+screen=""
+monitor=""
+while [ $# -gt 0 ]; do
+    case $1 in
+        --screen)
+            screen=1
+            shift
+            if [ $# -gt 0 ] && [[ $1 =~ ^[0-9]+$ ]]; then monitor=$1; shift; fi
+            ;;
+        *) positional+=("$1"); shift ;;
+    esac
+done
+[ "${#positional[@]}" -ge 1 ] && [ "${#positional[@]}" -le 2 ] || { echo "$usage" >&2; exit 2; }
+set -- "${positional[@]}"
 
 here="$(cd "$(dirname "$0")" && pwd)"
 # Отказ platform (WSL без Windows, другая ОС) — выход с ним же: присваивание под set -e.
@@ -65,6 +83,7 @@ if [ -z "$windows" ]; then
     args=(start "$1")
     # Окно открывается в своём каталоге: словарь — абсолютным путём.
     [ -z "$glossary" ] || args+=(--glossary "$(cd "$(dirname "$glossary")" && pwd)/$(basename "$glossary")")
+    [ -z "$screen" ] || args+=(--screen ${monitor:+"$monitor"})
     bash "$here/linux-window" "$root" "$(bash "$here/linux-setting" models)" "${args[@]}" && opened=0 || opened=$?
     [ "$opened" -ne 3 ] || exit 3
     [ "$opened" -eq 0 ] || fail "Окно записи не открылось."
@@ -77,7 +96,11 @@ window_root=$(bash "$here/windows-path" "$root")
 # Имя, словарь и корень — переменными окружения, а не в командной строке PowerShell: кавычки и кириллица не ломают
 # команду.
 export MEETING_START_NAME=$1 MEETING_START_GLOSSARY=$glossary MEETING_START_ROOT=$window_root
-export WSLENV="${WSLENV:+$WSLENV:}MEETING_START_NAME:MEETING_START_GLOSSARY:MEETING_START_ROOT"
+# Экран — пусто (не снимать), «on» (основной монитор) или номер монитора.
+MEETING_START_SCREEN=""
+[ -z "$screen" ] || MEETING_START_SCREEN=${monitor:-on}
+export MEETING_START_SCREEN
+export WSLENV="${WSLENV:+$WSLENV:}MEETING_START_NAME:MEETING_START_GLOSSARY:MEETING_START_ROOT:MEETING_START_SCREEN"
 # Git Bash переделывает похожие на путь значения переменных (/x → C:/Program Files/Git/x), когда запускает программу
 # Windows: имя «/ретро» дошло бы чужим. Переменные MEETING_* — как есть.
 export MSYS2_ENV_CONV_EXCL="${MSYS2_ENV_CONV_EXCL:+$MSYS2_ENV_CONV_EXCL;}MEETING_"
@@ -90,6 +113,8 @@ $meeting = Join-Path $env:LOCALAPPDATA "MeetingAssistant\app\meeting.exe"
 if (-not (Test-Path $meeting)) { [Console]::Error.WriteLine("Приложение записи не установлено: нет $meeting. Поставить — meeting-install."); exit 3 }
 $command = "`"$meeting`" start `"$env:MEETING_START_NAME`""
 if ($env:MEETING_START_GLOSSARY) { $command += " --glossary `"$env:MEETING_START_GLOSSARY`"" }
+if ($env:MEETING_START_SCREEN -eq "on") { $command += " --screen" }
+elseif ($env:MEETING_START_SCREEN) { $command += " --screen $([int]$env:MEETING_START_SCREEN)" }
 # Claude Code для Windows запускает Git Bash новой группой процессов, то есть с выключенным Ctrl+C, и этот флаг
 # наследуют все потомки — окно записи тоже. Снять его здесь: окно получает его от этого процесса.
 Add-Type -Namespace MeetingAssistant -Name Console -MemberDefinition "[DllImport(`"kernel32.dll`")] public static extern bool SetConsoleCtrlHandler(IntPtr handler, bool add);"

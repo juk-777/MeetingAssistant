@@ -11,6 +11,10 @@
 # Первая дописанная строка ответа уходит во всплывающее уведомление (meeting-notify) — на собеседовании в фокусе окно
 # звонка. Каждый ответ пишется в candidate.md каталога встречи.
 #
+# Экран встречи (meeting start --screen) описывает screen-describe: последнее описание идёт в каждый запрос, а новая
+# задача на экране — сама повод для подсказки «задача на экране», без вопроса голосом
+# (docs/specs/2026-11-20-screen-capture.md).
+#
 # Режим, контекст и модель — mode.json встречи, заметки — notes.md (пишет meeting-mode). `claude` — из переменной
 # MEETING_CLAUDE, иначе из PATH. Строки транскрипта до запуска не разбираются. Скрипт выходит после конца записи.
 #
@@ -24,6 +28,7 @@ POLL_SECONDS=0.3
 # Сколько ждать недописанный ответ после конца записи.
 FINISH_SECONDS=60
 DEFAULT_MODEL=opus
+SCREEN_TASK="задача на экране"
 
 [ $# -eq 1 ] || { echo "meeting-candidate <каталог встречи>" >&2; exit 2; }
 [ -d "$1" ] || { echo "Нет каталога встречи: $1" >&2; exit 1; }
@@ -46,9 +51,12 @@ source "$here/hint-answer"
 work=$(mktemp -d)
 answer_pid=""
 answer_header=""
+# shellcheck source=screen-describe
+source "$here/screen-describe"
 
 finish() {
     cancel_answer
+    cancel_screen
     rm -rf "$work"
 }
 trap finish EXIT
@@ -71,6 +79,8 @@ write_rules() {
         echo "На входе — последние реплики встречи и последняя реплика интервьюера. Всё, что ты пишешь, кандидат видит в окне подсказок посимвольно. Отвечай только по-русски."
         echo "Если это вопрос или задание кандидату — ответь за кандидата: первая строка — суть ответа одной фразой, дальше 3–4 коротких тезиса строками с «- ». Без вступления и без пересказа вопроса."
         echo "Если отвечать не на что (не вопрос и не задание, просьба подождать, реплика оборвана, это речь самого кандидата — разметка говорящих бывает ошибочной) — весь ответ один символ «-». Не объясняй, почему не отвечаешь: кандидат увидит объяснение как подсказку."
+        echo "Если на входе есть описание экрана встречи — это то, что сейчас показано на созвоне: задачу, код и схему с экрана учитывай в ответе."
+        echo "Если повод — новая задача на экране: первая строка — ход решения одной фразой, дальше 3–4 коротких тезиса строками с «- » (структуры данных, сложность, крайние случаи)."
     } > "$work/rules"
 }
 
@@ -79,9 +89,15 @@ write_prompt() {
     local text=$1
     {
         echo "Последние реплики встречи:"
-        head -n "$(complete_lines)" "$transcript" | tail -n "$CONTEXT_LINES" | cut -f3-
+        # Подсказка на задачу с экрана бывает раньше первой реплики — транскрипта ещё нет.
+        [ ! -f "$transcript" ] || head -n "$(complete_lines)" "$transcript" | tail -n "$CONTEXT_LINES" | cut -f3-
+        screen_prompt
         echo
-        echo "Последняя реплика интервьюера: $text"
+        if [ "$text" = "$SCREEN_TASK" ]; then
+            echo "Повод: на экране новая задача."
+        else
+            echo "Последняя реплика интервьюера: $text"
+        fi
     } > "$work/prompt"
 }
 
@@ -113,6 +129,19 @@ while true; do
         lines_read=$count
     fi
     [ -z "$pending_text" ] || start_answer "$pending_stamp" "$pending_text"
+
+    # В такте конца записи новое описание не начинается: выход его тут же оборвёт, а снимок уже ушёл бы в модель.
+    [ -n "$ended" ] || poll_screen
+    # Описание дописано: новая задача на экране — повод для подсказки. Та же задача на следующем снимке — нет.
+    if [ -e "$work/screen-described" ]; then
+        rm -f "$work/screen-described"
+        screen=$(last_screen)
+        task=$(screen_task "${screen#*$'\n'}")
+        if [ -n "$task" ] && [ "$task" != "$(cat "$work/screen-task" 2> /dev/null)" ]; then
+            printf '%s' "$task" > "$work/screen-task"
+            start_answer "${screen%%$'\n'*}" "$SCREEN_TASK"
+        fi
+    fi
 
     if [ -n "$ended" ]; then
         waited=0

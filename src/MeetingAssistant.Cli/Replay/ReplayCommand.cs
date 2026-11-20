@@ -92,6 +92,6 @@ internal static class ReplayCommand
             return await MeetingHost.Exit(started);
         }
 
-        return await MeetingHost.Exit(await host.Record(source.Value, cancellationToken));
+        return await MeetingHost.Exit(await host.Record(source.Value, screen: null, cancellationToken));
     }
 }

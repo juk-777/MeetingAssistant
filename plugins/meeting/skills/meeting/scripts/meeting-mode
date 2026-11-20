@@ -10,10 +10,13 @@
 # консольное окно через powershell.exe: из WSL в нём bash того же дистрибутива (wsl.exe), из Git Bash — bash Git.
 # Путь к `claude` берётся из окружения сессии: в окне PATH бывает другим (wsl.exe не читает профиль).
 #
+# Модель описания экрана (--screen-model, по умолчанию haiku) — тоже в mode.json: её читает screen-describe окна.
+#
 # meeting-mode <каталог встречи> candidate|interviewer [--context <строка>] [--notes <файл>]… [--model <модель>]
+#     [--screen-model <модель>]
 set -euo pipefail
 
-usage="meeting-mode <каталог встречи> candidate|interviewer [--context <строка>] [--notes <файл>]… [--model <модель>]"
+usage="meeting-mode <каталог встречи> candidate|interviewer [--context <строка>] [--notes <файл>]… [--model <модель>] [--screen-model <модель>]"
 [ $# -ge 2 ] || { echo "$usage" >&2; exit 2; }
 [ -d "$1" ] || { echo "Нет каталога встречи: $1" >&2; exit 1; }
 case $2 in
@@ -27,11 +30,13 @@ shift 2
 
 context=""
 model=opus
+screen_model=haiku
 notes=()
 while [ $# -gt 0 ]; do
     case $1 in
         --context) [ $# -ge 2 ] || { echo "$usage" >&2; exit 2; }; context=$2; shift 2 ;;
         --model) [ $# -ge 2 ] || { echo "$usage" >&2; exit 2; }; model=$2; shift 2 ;;
+        --screen-model) [ $# -ge 2 ] || { echo "$usage" >&2; exit 2; }; screen_model=$2; shift 2 ;;
         --notes)
             [ $# -ge 2 ] || { echo "$usage" >&2; exit 2; }
             [ -f "$2" ] || { echo "Нет файла заметок: $2" >&2; exit 1; }
@@ -41,7 +46,9 @@ while [ $# -gt 0 ]; do
         *) echo "$usage" >&2; exit 2 ;;
     esac
 done
-[[ $model =~ ^[A-Za-z0-9.:_-]+$ ]] || { echo "Модель — имя без пробелов и кавычек: $model" >&2; exit 2; }
+for name in "$model" "$screen_model"; do
+    [[ $name =~ ^[A-Za-z0-9.:_-]+$ ]] || { echo "Модель — имя без пробелов и кавычек: $name" >&2; exit 2; }
+done
 
 claude=$(command -v claude) || { echo "Нет claude в PATH: окну подсказок нечем звать модель." >&2; exit 1; }
 
@@ -54,8 +61,8 @@ json_string() {
     printf '"%s"' "$value"
 }
 
-printf '{"mode": "%s", "context": %s, "model": %s}\n' "$mode" "$(json_string "$context")" "$(json_string "$model")" \
-    > "$dir/mode.json"
+printf '{"mode": "%s", "context": %s, "model": %s, "screenModel": %s}\n' "$mode" "$(json_string "$context")" \
+    "$(json_string "$model")" "$(json_string "$screen_model")" > "$dir/mode.json"
 rm -f "$dir/notes.md"
 for file in "${notes[@]}"; do
     { printf '# %s\n\n' "$(basename "$file")"; cat "$file"; printf '\n\n'; } >> "$dir/notes.md"

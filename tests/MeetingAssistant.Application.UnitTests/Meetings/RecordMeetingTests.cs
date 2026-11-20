@@ -35,7 +35,7 @@ public sealed class RecordMeetingTests : IDisposable
             ScriptedSource.Seconds(Channel.Others, 1),
         ]);
 
-        Result result = await _harness.Recorder().Record(source, Token).WaitAsync(Limit, Token);
+        Result result = await _harness.Recorder().Record(source, screen: null, Token).WaitAsync(Limit, Token);
 
         result.IsSuccess.ShouldBeTrue();
         RecordedSpans().ShouldBe(
@@ -55,7 +55,7 @@ public sealed class RecordMeetingTests : IDisposable
         _harness.RecognizerReturns(Text);
         var source = new ScriptedSource([ScriptedSource.Seconds(Channel.Others, 2)]);
 
-        await _harness.Recorder().Record(source, Token).WaitAsync(Limit, Token);
+        await _harness.Recorder().Record(source, screen: null, Token).WaitAsync(Limit, Token);
 
         RecordedSpans().ShouldBe([(Channel.Others, Seconds(0), Seconds(2))]);
         _harness.Detectors.Created.ShouldAllBe(detector => detector.Disposed);
@@ -75,7 +75,7 @@ public sealed class RecordMeetingTests : IDisposable
             });
         var source = new ScriptedSource([ScriptedSource.Seconds(Channel.Me, 1)]);
 
-        Task<Result> recording = _harness.Recorder().Record(source, Token);
+        Task<Result> recording = _harness.Recorder().Record(source, screen: null, Token);
         await recognizing.Task.WaitAsync(Limit, Token);
 
         recording.IsCompleted.ShouldBeFalse();
@@ -101,7 +101,7 @@ public sealed class RecordMeetingTests : IDisposable
             endless: true);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(Token);
 
-        Task<Result> recording = _harness.Recorder().Record(source, cancellation.Token);
+        Task<Result> recording = _harness.Recorder().Record(source, screen: null, cancellation.Token);
         await source.Exhausted.WaitAsync(Limit, Token);
         await cancellation.CancelAsync();
         Result result = await recording.WaitAsync(Limit, Token);
@@ -129,7 +129,7 @@ public sealed class RecordMeetingTests : IDisposable
             endless: true);
         IMeetingRecorder recorder = _harness.Recorder();
 
-        await Should.ThrowAsync<IOException>(() => recorder.Record(source, Token).WaitAsync(Limit, Token));
+        await Should.ThrowAsync<IOException>(() => recorder.Record(source, screen: null, Token).WaitAsync(Limit, Token));
 
         meeting.IsRunning.ShouldBeTrue();
         await _harness.WakeEvents.DidNotReceive().AppendEnd(Arg.Any<MeetingStopped>(), Arg.Any<CancellationToken>());
@@ -144,7 +144,7 @@ public sealed class RecordMeetingTests : IDisposable
             [ScriptedSource.Seconds(Channel.Me, 1), ScriptedSource.Seconds(Channel.Others, 2)],
             failure: new AudioSourceException("Устройство отключено"));
 
-        Result result = await _harness.Recorder().Record(source, Token).WaitAsync(Limit, Token);
+        Result result = await _harness.Recorder().Record(source, screen: null, Token).WaitAsync(Limit, Token);
 
         result.Error.Code.ShouldBe(MeetingScenarioErrors.AudioSourceFailedCode);
         RecordedSpans().ShouldBe(
@@ -166,7 +166,7 @@ public sealed class RecordMeetingTests : IDisposable
             failure: new InvalidOperationException("Дефект источника"));
         IMeetingRecorder recorder = _harness.Recorder();
 
-        await Should.ThrowAsync<InvalidOperationException>(() => recorder.Record(source, Token).WaitAsync(Limit, Token));
+        await Should.ThrowAsync<InvalidOperationException>(() => recorder.Record(source, screen: null, Token).WaitAsync(Limit, Token));
 
         meeting.IsRunning.ShouldBeTrue();
         await _harness.WakeEvents.DidNotReceive().AppendEnd(Arg.Any<MeetingStopped>(), Arg.Any<CancellationToken>());
@@ -182,7 +182,7 @@ public sealed class RecordMeetingTests : IDisposable
             [ScriptedSource.Seconds(Channel.Me, 1), ScriptedSource.Seconds(Channel.Me, 1), ScriptedSource.Seconds(Channel.Others, 1)]);
         IMeetingRecorder recorder = _harness.Recorder();
 
-        await Should.ThrowAsync<InvalidOperationException>(() => recorder.Record(source, Token).WaitAsync(Limit, Token));
+        await Should.ThrowAsync<InvalidOperationException>(() => recorder.Record(source, screen: null, Token).WaitAsync(Limit, Token));
 
         RecordedSpans().ShouldBe([(Channel.Me, Seconds(0), Seconds(1))]);
         _harness.Detectors.Created.ShouldAllBe(detector => detector.Disposed);
@@ -202,7 +202,7 @@ public sealed class RecordMeetingTests : IDisposable
         var source = new ScriptedSource(
             [.. Enumerable.Range(0, 5).Select(_ => ScriptedSource.Seconds(Channel.Me, 1))]);
 
-        Task<Result> recording = _harness.Recorder().Record(source, Token);
+        Task<Result> recording = _harness.Recorder().Record(source, screen: null, Token);
         bool fedWhileRecognizing = await Task.WhenAny(source.Exhausted, Task.Delay(Limit, Token)) == source.Exhausted;
         _recognizerRelease.Set();
         await recording.WaitAsync(Limit, Token);
@@ -222,7 +222,7 @@ public sealed class RecordMeetingTests : IDisposable
             ScriptedSource.Pause(Channel.Others, 3),
         ]);
 
-        await _harness.Recorder().Record(source, Token).WaitAsync(Limit, Token);
+        await _harness.Recorder().Record(source, screen: null, Token).WaitAsync(Limit, Token);
 
         await _harness.WakeEvents.Received(1).AppendAnswerEnd(
             new AnswerEnded(1, _harness.Time.GetUtcNow()),
@@ -244,7 +244,7 @@ public sealed class RecordMeetingTests : IDisposable
             ScriptedSource.Seconds(Channel.Me, 2),
         ]);
 
-        Task<Result> recording = _harness.Recorder().Record(source, Token);
+        Task<Result> recording = _harness.Recorder().Record(source, screen: null, Token);
         await source.Exhausted.WaitAsync(Limit, Token);
 
         await _harness.WakeEvents.DidNotReceive().AppendAnswerEnd(Arg.Any<AnswerEnded>(), Arg.Any<CancellationToken>());
@@ -265,7 +265,7 @@ public sealed class RecordMeetingTests : IDisposable
             [ScriptedSource.Seconds(Channel.Me, 1), ScriptedSource.Seconds(Channel.Me, 1)],
             endless: true);
 
-        Result result = await _harness.Recorder().Record(source, Token).WaitAsync(Limit, Token);
+        Result result = await _harness.Recorder().Record(source, screen: null, Token).WaitAsync(Limit, Token);
 
         result.Error.ShouldBe(MeetingScenarioErrors.NotRunning);
         await _harness.WakeEvents.DidNotReceive().AppendEnd(Arg.Any<MeetingStopped>(), Arg.Any<CancellationToken>());

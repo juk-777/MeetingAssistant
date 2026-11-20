@@ -56,6 +56,8 @@
     <File Path="docs/plans/2026-11-17-interviewer-role.md" />
     <File Path="docs/plans/2026-11-18-refine-no-lines.md" />
     <File Path="docs/plans/2026-11-19-no-start-block.md" />
+    <File Path="docs/plans/2026-11-19-refine-priority.md" />
+    <File Path="docs/plans/2026-11-20-screen-capture.md" />
     <File Path="docs/plans/_template.md" />
   </Folder>
   <Folder Name="/Solution Items/docs/specs/">
@@ -85,6 +87,8 @@
     <File Path="docs/specs/2026-11-17-interviewer-role.md" />
     <File Path="docs/specs/2026-11-18-refine-no-lines.md" />
     <File Path="docs/specs/2026-11-19-no-start-block.md" />
+    <File Path="docs/specs/2026-11-19-refine-priority.md" />
+    <File Path="docs/specs/2026-11-20-screen-capture.md" />
     <File Path="docs/specs/_template.md" />
   </Folder>
   <Folder Name="/Solution Items/plugins/meeting/.claude-plugin/">
@@ -113,6 +117,7 @@
     <File Path="plugins/meeting/skills/meeting/scripts/meeting-start" />
     <File Path="plugins/meeting/skills/meeting/scripts/meeting-watch" />
     <File Path="plugins/meeting/skills/meeting/scripts/platform" />
+    <File Path="plugins/meeting/skills/meeting/scripts/screen-describe" />
     <File Path="plugins/meeting/skills/meeting/scripts/windows-path" />
   </Folder>
   <Folder Name="/Solution Items/prototype/">
@@ -145,12 +150,16 @@
     <File Path="prototype/recorder_sim.py" />
     <File Path="prototype/referee.py" />
     <File Path="prototype/rnnt.py" />
+    <File Path="prototype/screen-scenario.html" />
     <File Path="prototype/spm2vocab.py" />
     <File Path="prototype/terms-reading.terms.txt" />
     <File Path="prototype/terms-reading.txt" />
     <File Path="prototype/vad_lengths.py" />
     <File Path="prototype/wake_gate_eval.py" />
     <File Path="prototype/wer.py" />
+    <Project Path="prototype/screen-bench/screen-bench.csproj">
+      <Build Project="false" />
+    </Project>
     <Project Path="prototype/wnet/wnet.csproj">
       <Build Project="false" />
     </Project>

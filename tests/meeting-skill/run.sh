@@ -487,7 +487,7 @@ stub_start() {
     mkdir -p "$work/stub-start" "$work/start-root"
     cat > "$work/stub-start/powershell.exe" <<EOF
 #!/usr/bin/env bash
-printf '%s\n%s\n%s\n' "\$MEETING_START_NAME" "\$MEETING_START_GLOSSARY" "\$MEETING_START_ROOT" > "$work/start.args"
+printf '%s\n%s\n%s\n%s\n' "\$MEETING_START_NAME" "\$MEETING_START_GLOSSARY" "\$MEETING_START_ROOT" "\$MEETING_START_SCREEN" > "$work/start.args"
 [ ! -f "$work/start.next" ] || ( sleep 1; cp "$work/start.next" "$work/start-root/current.json" ) > /dev/null 2>&1 &
 EOF
     chmod +x "$work/stub-start/powershell.exe"
@@ -537,6 +537,26 @@ start_WhenGlossaryGiven_PassesItAndRootAsWindowsPaths() {
         { cat "$work/start.args"; return 1; }
     grep -qxF -- "-w $work/glossary.txt" "$work/paths.calls" && grep -qxF -- "-w $work/start-root" "$work/paths.calls" ||
         { cat "$work/paths.calls"; return 1; }
+}
+
+start_WhenScreenGiven_PassesItToWindow() {
+    local args expected
+    for args in '' '--screen' '--screen 2' 'словарь.txt --screen'; do
+        new_meeting
+        stub_start
+        current_json "$work/start.next" "new${#args}" "$meeting"
+        touch "$work/словарь.txt"
+        case $args in
+            '') expected='' ;;
+            *2) expected=2 ;;
+            *) expected=on ;;
+        esac
+        # shellcheck disable=SC2086 # ключи — словами
+        (cd "$work" && PATH="$work/stub-start:$PATH" MEETINGS_ROOT="$work/start-root" MEETING_START_TIMEOUT=5 \
+            timeout 15 bash "$bin/meeting-start" 'x' $args > /dev/null) || { echo "аргументы: $args"; return 1; }
+        [ "$(sed -n 4p "$work/start.args")" = "$expected" ] || { echo "аргументы: $args"; cat "$work/start.args"; return 1; }
+        [ "$(head -1 "$work/start.args")" = x ] || { echo "аргументы: $args"; cat "$work/start.args"; return 1; }
+    done
 }
 
 start_WhenAppNotInstalled_ExitsAsNotInstalledWithoutWaiting() {
@@ -1378,6 +1398,15 @@ linuxstart_WhenNewMeetingAppears_PassesNameAsIsAndPrintsIt() {
         { cat "$work/linux-meeting.env"; return 1; }
 }
 
+linuxstart_WhenScreenGiven_PassesItToApp() {
+    linux_installed || return 1
+    new_meeting
+    current_json "$work/start.next" new "$meeting"
+    stub_terminal "$work/stub-term" x-terminal-emulator -e
+    MEETING_START_TIMEOUT=5 linux_skill "$work/stub-term" meeting-start 'x' --screen > /dev/null || return 1
+    [ "$(cat "$work/linux-meeting.args")" = "$(printf '%s\n' start x --screen)" ] || { cat "$work/linux-meeting.args"; return 1; }
+}
+
 linuxstart_WhenOnlyOneTerminal_OpensItWithItsKey() {
     linux_installed || return 1
     local pair terminal number=0
@@ -1641,7 +1670,8 @@ release_WhenTagIsNotVersion_Refuses() {
 
 # stub_claude <пауза> <куски ответа…>: двойник `claude -p` — запрос (stdin), аргументы и системный промпт пишет в
 # claude.prompt, claude.args и claude.system, ответ отдаёт строками stream-json по куску с паузой перед каждым. Кусок —
-# уже в виде JSON-строки.
+# уже в виде JSON-строки. Вызов описания экрана (с --input-format) пишет вход и аргументы в claude.describe.* и отвечает
+# текстом по номеру вызова (stub_describe).
 stub_claude() {
     local pause=$1 part
     shift
@@ -1649,6 +1679,20 @@ stub_claude() {
     for part in "$@"; do printf '%s\n' "$part" >> "$work/claude.parts"; done
     cat > "$work/claude" << EOF
 #!/usr/bin/env bash
+if [[ " \$* " == *" --input-format "* ]]; then
+    number=\$(( \$(cat "$work/claude.describe.count" 2> /dev/null || echo 0) + 1 ))
+    echo "\$number" > "$work/claude.describe.count"
+    cat > "$work/claude.describe.input.\$number"
+    # Что уже описано к началу вызова: второе описание начинается только после первого.
+    cat "$meeting/screen.md" > "$work/claude.describe.seen.\$number" 2> /dev/null
+    printf '%s\n' "\$*" >> "$work/claude.describe.args"
+    sleep "\$(cat "$work/claude.describe.pause" 2> /dev/null || echo 0)"
+    answer="$work/claude.describe.\$number"
+    [ -f "\$answer" ] || answer="$work/claude.describe.last"
+    printf '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"%s"}}}\n' "\$(cat "\$answer" 2> /dev/null)"
+    printf '{"type":"result","subtype":"success"}\n'
+    exit 0
+fi
 cat > "$work/claude.prompt"
 printf '%s\n' "\$*" >> "$work/claude.args"
 while [ \$# -gt 0 ]; do
@@ -1662,7 +1706,7 @@ done < "$work/claude.parts"
 printf '{"type":"result","subtype":"success"}\n'
 EOF
     chmod +x "$work/claude"
-    rm -f "$work/claude.args" "$work/claude.prompt" "$work/claude.system"
+    rm -f "$work/claude.args" "$work/claude.prompt" "$work/claude.system" "$work"/claude.describe.*
     # Уведомление — заглушкой powershell.exe, которая копит тексты: видно, сколько их было. Как настоящий
     # powershell.exe, она читает свой stdin: унаследованный поток ответа она бы съела.
     mkdir -p "$work/stub-ps-many"
@@ -1799,6 +1843,195 @@ candidate_WhenModeAndNotesGiven_PassesModelContextAndNotes() {
         { cat "$work/claude.prompt"; return 1; }
 }
 
+# stub_describe <номер вызова|last> <текст JSON-строкой>: ответ двойника на описание экрана; last — на вызовы без
+# своего ответа. Вызывать после stub_claude: он чистит claude.describe.*.
+stub_describe() {
+    printf '%s' "$2" > "$work/claude.describe.$1"
+}
+
+# screen_change <чч-мм-сс> <содержимое>: смена экрана, как её пишет приложение, — снимок, затем строка screen.log.
+screen_change() {
+    mkdir -p "$meeting/screen"
+    printf '%s' "$2" > "$meeting/screen/$1.png"
+    printf '1762774270.000\t%s.png\n' "$1" >> "$meeting/screen.log"
+}
+
+candidate_WhenScreenChanged_DescribesItAndAddsItToNextAnswer() {
+    new_meeting
+    stub_claude 0 'Суть: складывает'
+    stub_describe last 'Код:\n    return a + b'
+    start_candidate
+
+    screen_change 00-00-05 'снимок-один'
+    wait_file_text "$meeting/screen.md" '## [00:00:05] экран' || return 1
+    say 6 Собеседники 'Что делает этот код на экране?'
+    end_of_recording 6
+
+    expect_exit "$candidate_pid" 0 || return 1
+    grep -q -- '--model haiku --effort low' "$work/claude.describe.args" || { cat "$work/claude.describe.args"; return 1; }
+    grep -qF "$(printf 'снимок-один' | base64 -w0)" "$work/claude.describe.input.1" ||
+        { cat "$work/claude.describe.input.1"; return 1; }
+    grep -qF 'Экран встречи (описание снимка на [00:00:05]):' "$work/claude.prompt" || { cat "$work/claude.prompt"; return 1; }
+    grep -qxF '    return a + b' "$work/claude.prompt" || { cat "$work/claude.prompt"; return 1; }
+    # Код без задачи — не повод для подсказки: ответ один, на вопрос.
+    [ "$(grep -c '^## ' "$meeting/candidate.md")" -eq 1 ] || { cat "$meeting/candidate.md"; return 1; }
+}
+
+candidate_WhenScreenModelSet_DescribesWithIt() {
+    new_meeting
+    stub_claude 0 'ответ'
+    stub_describe last 'Код:\nx = 1'
+    printf '{"mode": "candidate", "context": "", "model": "opus", "screenModel": "sonnet"}' > "$meeting/mode.json"
+    start_candidate
+
+    screen_change 00-00-05 'снимок'
+    wait_file_text "$meeting/screen.md" '## [00:00:05] экран' || return 1
+    end_of_recording 0
+
+    expect_exit "$candidate_pid" 0 || return 1
+    grep -q -- '--model sonnet --effort low' "$work/claude.describe.args" || { cat "$work/claude.describe.args"; return 1; }
+}
+
+candidate_WhenNewTaskOnScreen_HintsOnceWithoutQuestion() {
+    new_meeting
+    stub_claude 0 'Ход: хеш-таблица' '\n- O(n)'
+    stub_describe 1 'Задача:\nНайти два числа с суммой target'
+    # Та же задача другими пустыми строками — не новая задача.
+    stub_describe 2 'Задача:\n\nНайти два числа с суммой target\n\nКод:\ndef two_sum(): pass'
+    stub_describe 3 '-'
+    start_candidate
+
+    screen_change 00-00-05 'задача'
+    wait_file_text "$meeting/candidate.md" '## [00:00:05] задача на экране' || return 1
+    screen_change 00-00-20 'задача и код'
+    wait_file_text "$meeting/screen.md" '## [00:00:20] экран' || return 1
+    grep -qxF 'Повод: на экране новая задача.' "$work/claude.prompt" || { cat "$work/claude.prompt"; return 1; }
+    grep -qxF 'Найти два числа с суммой target' "$work/claude.prompt" || { cat "$work/claude.prompt"; return 1; }
+    screen_change 00-00-35 'звонок'
+    wait_file_text "$meeting/screen.md" '## [00:00:35] экран' || return 1
+    sleep 0.5
+    say 36 Собеседники 'Как бы вы решили эту задачу?'
+    wait_file_text "$meeting/candidate.md" '## [00:00:36]' || return 1
+    end_of_recording 36
+
+    expect_exit "$candidate_pid" 0 || return 1
+    # Та же задача с кодом и экран без задачи подсказки не дают; второй ответ — на вопрос.
+    [ "$(grep -c '^## ' "$meeting/candidate.md")" -eq 2 ] || { cat "$meeting/candidate.md"; return 1; }
+    [ "$(grep -c '' "$work/claude.args")" -eq 2 ] || { cat "$work/claude.args"; return 1; }
+    grep -qF 'новая задача на экране' "$work/claude.system" || { cat "$work/claude.system"; return 1; }
+    grep -qxF '(нет задачи и кода)' "$meeting/screen.md" || { cat "$meeting/screen.md"; return 1; }
+    # Экран без задачи прошлое описание не стирает: вопрос получает задачу и код.
+    grep -qF 'Экран встречи (описание снимка на [00:00:20]):' "$work/claude.prompt" || { cat "$work/claude.prompt"; return 1; }
+    grep -qxF 'def two_sum(): pass' "$work/claude.prompt" || { cat "$work/claude.prompt"; return 1; }
+    ! grep -qF '(нет задачи и кода)' "$work/claude.prompt" || { cat "$work/claude.prompt"; return 1; }
+}
+
+candidate_WhenScreenWithoutTaskBetweenSameTasks_HintsOnce() {
+    new_meeting
+    stub_claude 0 'Ход: хеш-таблица'
+    stub_describe 1 'Задача:\nНайти два числа с суммой target'
+    stub_describe 2 'Код:\ndef two_sum(): pass'
+    stub_describe 3 'Задача:\nНайти два числа с суммой target'
+    start_candidate
+
+    screen_change 00-00-05 'задача'
+    wait_file_text "$meeting/candidate.md" '## [00:00:05] задача на экране' || return 1
+    screen_change 00-00-20 'редактор'
+    wait_file_text "$meeting/screen.md" '## [00:00:20] экран' || return 1
+    screen_change 00-00-35 'снова задача'
+    wait_file_text "$meeting/screen.md" '## [00:00:35] экран' || return 1
+    sleep 0.5
+    end_of_recording 0
+
+    expect_exit "$candidate_pid" 0 || return 1
+    # С условия ушли в редактор и вернулись — та же задача, подсказка одна.
+    [ "$(grep -c '^## ' "$meeting/candidate.md")" -eq 1 ] || { cat "$meeting/candidate.md"; return 1; }
+}
+
+candidate_WhenScreenChangesDuringDescription_DescribesOnlyLatestAfterIt() {
+    new_meeting
+    stub_claude 0 'ответ'
+    stub_describe last 'Код:\nx = 1'
+    echo 0.6 > "$work/claude.describe.pause"
+    start_candidate
+
+    screen_change 00-00-05 'первый'
+    wait_file_text "$work/claude.describe.count" 1 || return 1
+    screen_change 00-00-06 'второй'
+    screen_change 00-00-07 'третий'
+    wait_file_text "$meeting/screen.md" '## [00:00:07] экран' || return 1
+    sleep 1
+    end_of_recording 0
+
+    expect_exit "$candidate_pid" 0 || return 1
+    # Первое описание дописано, а не оборвано; промежуточная смена пропущена.
+    grep -qF '## [00:00:05] экран' "$meeting/screen.md" || { cat "$meeting/screen.md"; return 1; }
+    ! grep -qF '[00:00:06]' "$meeting/screen.md" || { cat "$meeting/screen.md"; return 1; }
+    [ "$(cat "$work/claude.describe.count")" = 2 ] || { echo "описаний: $(cat "$work/claude.describe.count")"; return 1; }
+    grep -qF '## [00:00:05] экран' "$work/claude.describe.seen.2" || { echo "второе описание началось раньше конца первого"; return 1; }
+    grep -qF "$(printf 'третий' | base64 -w0)" "$work/claude.describe.input.2" ||
+        { cat "$work/claude.describe.input.2"; return 1; }
+}
+
+candidate_WhenScreenBeforeStart_DescribesLatestOfThem() {
+    new_meeting
+    stub_claude 0 'ответ'
+    stub_describe last 'Код:\nx = 1'
+    screen_change 00-00-00 'старый'
+    screen_change 00-00-10 'последний до окна'
+    start_candidate
+
+    wait_file_text "$meeting/screen.md" '## [00:00:10] экран' || return 1
+    end_of_recording 0
+
+    expect_exit "$candidate_pid" 0 || return 1
+    [ "$(cat "$work/claude.describe.count")" = 1 ] || { echo "описаний: $(cat "$work/claude.describe.count")"; return 1; }
+}
+
+candidate_WhenTaskOnScreenBeforeAnyUtterance_HintsWithoutTranscriptErrors() {
+    new_meeting
+    stub_claude 0 'Ход: хеш-таблица'
+    stub_describe last 'Задача:\nНайти два числа с суммой target'
+    start_candidate
+    rm "$meeting/transcript.md"
+
+    screen_change 00-00-05 'задача'
+    wait_file_text "$meeting/candidate.md" '## [00:00:05] задача на экране' || return 1
+    end_of_recording 0
+
+    expect_exit "$candidate_pid" 0 || return 1
+    ! grep -qF 'transcript.md' "$work/candidate.out" || { cat "$work/candidate.out"; return 1; }
+}
+
+candidate_WhenDescriptionModelFails_ShowsReasonAndWritesNothing() {
+    new_meeting
+    stub_claude 0 'ответ'
+    stub_describe last ''
+    start_candidate
+
+    screen_change 00-00-05 'снимок'
+    wait_file_text "$work/candidate.out" '(экран [00:00:05]: модель не ответила' || return 1
+    end_of_recording 0
+
+    expect_exit "$candidate_pid" 0 || return 1
+    [ ! -e "$meeting/screen.md" ] || { cat "$meeting/screen.md"; return 1; }
+}
+
+candidate_WhenRecordingEndsDuringDescription_WritesNoPartialDescription() {
+    new_meeting
+    stub_claude 0 'ответ'
+    stub_describe last 'Код:\nx = 1'
+    echo 3 > "$work/claude.describe.pause"
+    start_candidate
+
+    screen_change 00-00-05 'снимок'
+    wait_file_text "$work/claude.describe.count" 1 || return 1
+    end_of_recording 0
+
+    expect_exit "$candidate_pid" 0 || return 1
+    [ ! -e "$meeting/screen.md" ] || { cat "$meeting/screen.md"; return 1; }
+}
+
 candidate_WhenUtteranceHasExactlyMinimumWords_CallsModel() {
     new_meeting
     stub_claude 0 'ответ'
@@ -1891,9 +2124,10 @@ mode_WhenContextNotesAndModel_WritesThemIntoMeeting() {
 
     PATH="$work/stub-mode:$PATH" WSL_DISTRO_NAME=Test bash "$bin/meeting-mode" "$meeting" candidate \
         --context 'бэкенд, "системный" дизайн \ кэш' --notes "$work/резюме.md" --notes "$work/о компании.md" \
-        --model sonnet || return 1
+        --model sonnet --screen-model opus || return 1
 
     [ "$(bash "$bin/current-field" "$meeting/mode.json" mode)" = candidate ] || { cat "$meeting/mode.json"; return 1; }
+    [ "$(bash "$bin/current-field" "$meeting/mode.json" screenModel)" = opus ] || { cat "$meeting/mode.json"; return 1; }
     [ "$(bash "$bin/current-field" "$meeting/mode.json" context)" = 'бэкенд, "системный" дизайн \ кэш' ] ||
         { cat "$meeting/mode.json"; return 1; }
     [ "$(bash "$bin/current-field" "$meeting/mode.json" model)" = sonnet ] || { cat "$meeting/mode.json"; return 1; }
@@ -1910,6 +2144,7 @@ mode_WhenNoOptions_WritesOpusAndNoNotes() {
     PATH="$work/stub-mode:$PATH" WSL_DISTRO_NAME=Test bash "$bin/meeting-mode" "$meeting" candidate || return 1
 
     [ "$(bash "$bin/current-field" "$meeting/mode.json" model)" = opus ] || { cat "$meeting/mode.json"; return 1; }
+    [ "$(bash "$bin/current-field" "$meeting/mode.json" screenModel)" = haiku ] || { cat "$meeting/mode.json"; return 1; }
     [ "$(bash "$bin/current-field" "$meeting/mode.json" context)" = "" ] || { cat "$meeting/mode.json"; return 1; }
     [ ! -e "$meeting/notes.md" ] || { echo "notes.md остался"; return 1; }
 }
@@ -2026,6 +2261,26 @@ answer_end() {
 # answer_part <файл запроса>: часть запроса модели после «Ответ кандидата:».
 answer_part() {
     sed -n '/^Ответ кандидата:$/,$p' "$1" | tail -n +2
+}
+
+interviewer_WhenTaskOnScreen_AddsItToHintWithoutOwnHint() {
+    new_meeting
+    printf '{"mode": "interviewer", "context": "", "model": "opus"}\n' > "$meeting/mode.json"
+    stub_claude 0 'верно — три указателя'
+    stub_describe last 'Задача:\nРазвернуть связный список'
+    start_interviewer
+
+    screen_change 00-00-05 'задача'
+    wait_file_text "$meeting/screen.md" '## [00:00:05] экран' || return 1
+    sleep 0.5
+    [ ! -e "$work/claude.args" ] || { echo "подсказка на задачу: $(cat "$work/claude.args")"; return 1; }
+    say 6 Собеседники 'Я бы развернул его тремя указателями, за один проход.'
+    answer_end 6
+    end_of_recording 6
+
+    expect_exit "$interviewer_pid" 0 || return 1
+    grep -qxF 'Развернуть связный список' "$work/claude.prompt" || { cat "$work/claude.prompt"; return 1; }
+    grep -qF 'код кандидата с экрана' "$work/claude.system" || { cat "$work/claude.system"; return 1; }
 }
 
 interviewer_WhenAnswerEnds_HintsOnCandidateLinesAndJournals() {

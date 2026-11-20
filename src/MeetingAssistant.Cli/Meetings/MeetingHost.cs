@@ -6,6 +6,7 @@ using MeetingAssistant.Application.Abstractions.Messaging;
 using MeetingAssistant.Application.Meetings;
 using MeetingAssistant.Application.Meetings.Recording;
 using MeetingAssistant.Application.Meetings.Refine;
+using MeetingAssistant.Application.Meetings.Screen;
 using MeetingAssistant.Application.Meetings.Start;
 using MeetingAssistant.Cli.Refine;
 using MeetingAssistant.Infrastructure;
@@ -117,12 +118,12 @@ internal sealed class MeetingHost : IDisposable, IAsyncDisposable
     /// <summary>
     /// Записывает встречу из источника до его конца, отмены или потери устройства и печатает итог.
     /// </summary>
-    public Task<Result> Record(IAudioSource source, CancellationToken cancellationToken) =>
+    public Task<Result> Record(IAudioSource source, IScreenSource? screen, CancellationToken cancellationToken) =>
         UntilWindowClosed(
             async token =>
             {
                 var elapsed = Stopwatch.StartNew();
-                Result recorded = await Services.GetRequiredService<IMeetingRecorder>().Record(source, token);
+                Result recorded = await Services.GetRequiredService<IMeetingRecorder>().Record(source, screen, token);
                 int utterances = Services.GetRequiredService<ICurrentMeeting>().Meeting?.LastUtteranceNumber ?? 0;
 
                 Console.WriteLine(Services.GetRequiredService<RecordingStatistics>().Summary(utterances, elapsed.Elapsed));
