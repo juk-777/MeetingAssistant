@@ -2,6 +2,7 @@ using System.Threading.Channels;
 using MeetingAssistant.Application.Abstractions.Messaging;
 using MeetingAssistant.Application.Meetings.Observe;
 using MeetingAssistant.Application.Meetings.Recognize;
+using MeetingAssistant.Application.Meetings.Screen;
 using MeetingAssistant.Application.Meetings.Stop;
 using MeetingAssistant.Domain.Meetings;
 using MeetingAssistant.SharedKernel;
@@ -17,15 +18,17 @@ namespace MeetingAssistant.Application.Meetings.Recording;
 /// Очередь читает один читатель, и остановка идёт им же после последней фразы: агрегат встречи не потокобезопасен.
 /// Речь каналов встаёт в очередь после каждого куска, следом за фразами, которые кусок закрыл: конец ответа
 /// сверяется с уже записанными фразами. Очередь без ограничения размера: переполненная очередь остановила бы подачу,
-/// а живой захват ждать не будет.
+/// а живой захват ждать не будет. Экран, если он снимается, наблюдается рядом, мимо очереди, и гасится до конца
+/// записи: смена экрана после <c>конец записи</c> не пишется.
 /// </remarks>
 internal sealed class MeetingRecorder(
     ICommandHandler<RecognizeSpeech> recognizeSpeech,
     ICommandHandler<ObserveSpeech> observeSpeech,
     ICommandHandler<StopMeeting> stopMeeting,
-    IVoiceActivityDetectorFactory detectorFactory) : IMeetingRecorder
+    IVoiceActivityDetectorFactory detectorFactory,
+    IScreenWatcher screenWatcher) : IMeetingRecorder
 {
-    public async Task<Result> Record(IAudioSource source, CancellationToken cancellationToken)
+    public async Task<Result> Record(IAudioSource source, IScreenSource? screen, CancellationToken cancellationToken)
     {
         Channel<ICommand> phrases = System.Threading.Channels.Channel.CreateUnbounded<ICommand>(
             new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
@@ -34,6 +37,9 @@ internal sealed class MeetingRecorder(
 
         // Читатель ждёт фраз асинхронно, и продолжения канала идут в пуле: подача распознавание не ждёт.
         Task<Result> recognition = RecognizeAll(phrases.Reader, feeding);
+
+        using var watching = new CancellationTokenSource();
+        Task screenWatch = screen is null ? Task.CompletedTask : screenWatcher.Watch(screen, watching.Token);
 
         Result recognized;
         AudioSourceException? sourceLost;
@@ -44,7 +50,15 @@ internal sealed class MeetingRecorder(
         }
         finally
         {
-            recognized = await recognition;
+            try
+            {
+                recognized = await recognition;
+            }
+            finally
+            {
+                await watching.CancelAsync();
+                await screenWatch;
+            }
         }
 
         if (recognized.IsFailure)

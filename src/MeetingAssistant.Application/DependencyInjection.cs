@@ -2,6 +2,7 @@ using MeetingAssistant.Application.Abstractions.Behaviors;
 using MeetingAssistant.Application.Abstractions.Events;
 using MeetingAssistant.Application.Abstractions.Messaging;
 using MeetingAssistant.Application.Meetings.Recording;
+using MeetingAssistant.Application.Meetings.Screen;
 using MeetingAssistant.SharedKernel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -36,6 +37,7 @@ public static class DependencyInjection
 
         services.AddTransient<IDomainEventDispatcher, DomainEventDispatcher>();
         services.AddTransient<IMeetingRecorder, MeetingRecorder>();
+        services.AddTransient<IScreenWatcher, ScreenWatcher>();
         services.TryAddSingleton(TimeProvider.System);
 
         return services;

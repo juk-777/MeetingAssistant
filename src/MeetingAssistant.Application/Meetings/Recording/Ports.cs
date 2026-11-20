@@ -1,3 +1,4 @@
+using MeetingAssistant.Application.Meetings.Screen;
 using MeetingAssistant.Domain.Meetings;
 using MeetingAssistant.SharedKernel;
 
@@ -76,5 +77,8 @@ public interface IMeetingRecorder
     /// <summary>
     /// Распознаёт фразы источника до его конца, отмены или потери устройства, затем останавливает встречу.
     /// </summary>
-    Task<Result> Record(IAudioSource source, CancellationToken cancellationToken);
+    /// <param name="source">Звук встречи.</param>
+    /// <param name="screen">Монитор, который снимается, пока идёт запись; <see langword="null"/> — экран не снимается.</param>
+    /// <param name="cancellationToken">Конец подачи звука: уже вырезанные фразы распознаются.</param>
+    Task<Result> Record(IAudioSource source, IScreenSource? screen, CancellationToken cancellationToken);
 }

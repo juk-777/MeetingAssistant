@@ -64,7 +64,7 @@ internal static partial class MeetingFileFormat
         $"{Epoch(stopped.At)}\t{stopped.LastUtteranceNumber}\t{EndOfRecording}";
 
     // Секунды Unix с миллисекундами: целочисленно, без округления double.
-    private static string Epoch(DateTimeOffset at)
+    public static string Epoch(DateTimeOffset at)
     {
         long milliseconds = at.ToUnixTimeMilliseconds();
         return string.Create(CultureInfo.InvariantCulture, $"{milliseconds / 1000}.{milliseconds % 1000:D3}");

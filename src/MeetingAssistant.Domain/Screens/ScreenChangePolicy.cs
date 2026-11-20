@@ -23,6 +23,11 @@ public sealed class ScreenChangePolicy
     public const int MinChangedCells = 5;
 
     /// <summary>
+    /// Экран снимается с этим шагом: «устоялась» — несколько снимков подряд без изменения.
+    /// </summary>
+    public static readonly TimeSpan CaptureInterval = TimeSpan.FromSeconds(1);
+
+    /// <summary>
     /// Ячейка не менялась столько — устоялась.
     /// </summary>
     public static readonly TimeSpan Settle = TimeSpan.FromSeconds(3);
